@@ -44,9 +44,9 @@
 
 ## **Phase Checklist & CLI Execution Modes**
 
-- [ ] **Phase 1: Architecture & Specification**
+- [x] **Phase 1: Architecture & Specification**
   - **Goal**: Lock in JSON schemas, target Facebook surfaces, extraction payloads, and error states in `docs/ARCHITECTURE.md`.
-  - **Recommended Mode**: *Main Session (Interactive Collaboration)*.
+  - **Status**: ✅ Completed & Documented in `docs/ARCHITECTURE.md`.
 
 - [ ] **Phase 2: TDD Component 1 — Human Language Task Compiler**
   - **Goal**: Converts natural human language prompts into validated structured JSON manifests.
