@@ -52,6 +52,34 @@ def compile_prompt(req: CompileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/pipeline")
+async def run_pipeline(req: PipelineRequest):
+    """Run full end-to-end pipeline: compile NL prompt -> execute scrape -> synthesize."""
+    try:
+        manifest = compiler.compile(req.prompt)
+        posts, group_records = await scraper.execute_task(manifest, headless=req.headless)
+
+        if manifest.output_config.format == OutputFormat.CSV:
+            formatted = synthesizer.format_csv(posts, group_records, manifest.output_config.columns)
+        elif manifest.output_config.format == OutputFormat.MARKDOWN_TABLE:
+            formatted = synthesizer.format_markdown_table(posts, group_records, manifest.output_config.columns)
+        elif manifest.output_config.format == OutputFormat.DIAGRAM_MERMAID:
+            formatted = synthesizer.format_mermaid_diagram(posts, group_records)
+        else:
+            formatted = synthesizer.format_json(posts, group_records)
+
+        return {
+            "status": "success",
+            "task_id": manifest.task_id,
+            "manifest": manifest,
+            "posts_count": len(posts),
+            "gated_groups_count": len([g for g in group_records if g.requires_joining]),
+            "formatted_output": formatted,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/synthesize")
 def synthesize_data(req: SynthesizeRequest):
     """Synthesize post and group records into requested format (CSV, Markdown, Mermaid, JSON)."""

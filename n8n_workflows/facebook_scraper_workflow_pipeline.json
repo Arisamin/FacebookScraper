@@ -1,0 +1,67 @@
+{
+  "name": "Facebook Scraper AI Autonomous Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fb-scrape-task",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/pipeline",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt\": \"{{ $json.body.prompt || $json.prompt || 'Scrape latest 5 posts from Python Devs group' }}\",\n  \"headless\": true\n}"
+      },
+      "id": "2",
+      "name": "Facebook Scraper Engine Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"{{ $json.status }}\",\n  \"task_id\": \"{{ $json.task_id }}\",\n  \"posts_count\": {{ $json.posts_count }},\n  \"result\": {{ JSON.stringify($json.formatted_output) }}\n}"
+      },
+      "id": "3",
+      "name": "Return Formatted Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [780, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Facebook Scraper Engine Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Scraper Engine Node": {
+      "main": [
+        [
+          {
+            "node": "Return Formatted Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

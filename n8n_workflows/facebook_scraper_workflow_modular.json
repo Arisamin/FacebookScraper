@@ -34,7 +34,7 @@
         "url": "http://127.0.0.1:8000/synthesize",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"posts\": {{ $json.posts }},\n  \"group_records\": {{ $json.group_records }},\n  \"format\": \"{{ $('Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('Task Compiler Node').item.json.output_config.columns }}\n}"
+        "jsonBody": "={\n  \"posts\": [],\n  \"group_records\": [],\n  \"format\": \"{{ $('Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('Task Compiler Node').item.json.output_config.columns || '[]' }}\n}"
       },
       "id": "3",
       "name": "Output Synthesizer Node",
@@ -45,7 +45,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"success\",\n  \"task_id\": \"{{ $('Task Compiler Node').item.json.task_id }}\",\n  \"result\": {{ $json.formatted_output }}\n}"
+        "responseBody": "={\n  \"status\": \"success\",\n  \"task_id\": \"{{ $('Task Compiler Node').item.json.task_id }}\",\n  \"result\": {{ JSON.stringify($json.formatted_output) }}\n}"
       },
       "id": "4",
       "name": "Return Response",
