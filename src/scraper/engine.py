@@ -35,17 +35,13 @@ class ScraperEngine:
         manifest: TaskManifest,
         headless: bool = True,
         page_override: Optional[Page] = None,
-        mock: bool = False,
     ) -> Tuple[List[PostPayload], List[GroupRecord]]:
         """
-        Executes scraping for the given TaskManifest.
+        Executes real scraping against Facebook for the given TaskManifest.
         Returns a tuple of (matched_posts, group_records).
         """
         posts: List[PostPayload] = []
         group_records: List[GroupRecord] = []
-
-        if mock:
-            return self.generate_sandbox_mock_posts(manifest)
 
         if page_override:
             # Used in unit/integration tests with mocked or injected page
@@ -65,59 +61,11 @@ class ScraperEngine:
             page: Page = await context.new_page()
             try:
                 posts, group_records = await self._scrape_page(page, manifest)
-                # If no session was configured and 0 posts were returned from live Facebook,
-                # generate simulated sandbox posts if FB_SANDBOX_FALLBACK=1
-                import os
-                if not posts and not self.session_manager.has_valid_session() and os.getenv("FB_SANDBOX_FALLBACK", "1") == "1":
-                    posts, group_records = self.generate_sandbox_mock_posts(manifest)
             finally:
                 await context.close()
                 await browser.close()
 
         return posts, group_records
-
-    def generate_sandbox_mock_posts(
-        self, manifest: TaskManifest
-    ) -> Tuple[List[PostPayload], List[GroupRecord]]:
-        """Generate realistic simulated posts for sandbox and workflow verification."""
-        from datetime import datetime, timezone
-        target_name = manifest.target.url_or_query
-        limit = min(manifest.target.max_posts_to_scan, 5)
-
-        sample_posts = [
-            PostPayload(
-                post_id=f"post_mock_{i+1}",
-                group_name=target_name if target_name != "facebook search" else "Developer Hub",
-                author_name=name,
-                author_profile_url=f"https://facebook.com/user/{name.lower().replace(' ', '')}",
-                published_iso=datetime.now(timezone.utc).isoformat(),
-                content_text=text,
-                snippet=self.dom_extractor.generate_snippet(text, manifest.output_config.snippet_max_words or 40),
-                post_url=f"https://facebook.com/groups/devs/posts/{1000234 + i}",
-                price=price,
-                extracted_location=manifest.target.location or "Global",
-            )
-            for i, (name, text, price) in enumerate([
-                ("Alex Chen", f"Looking for recommendations on building autonomous AI scraper agents in {target_name}. Any tips on rate limiting?", None),
-                ("Sarah Connor", f"Released an open-source n8n bridge node for automated feed monitoring. Check it out!", None),
-                ("Michael Scott", f"Selling high-end workstation desk and ergonomic chair. Price: 850 NIS. DM if interested.", 850.0),
-                ("David Miller", f"Great discussion on scaling Python FastAPI microservices with Playwright headless clusters.", None),
-                ("Elena Rostova", f"Who is attending the upcoming AI & Automation workshop in Tel Aviv next week?", None),
-            ][:limit])
-        ]
-
-        sample_groups = [
-            GroupRecord(
-                group_name=f"{target_name} Community",
-                group_url=f"https://facebook.com/groups/{target_name.lower().replace(' ', '')}",
-                requires_joining=False,
-                is_accessible=True,
-                posts_scanned=limit,
-                matched_posts_count=len(sample_posts),
-            )
-        ]
-
-        return sample_posts, sample_groups
 
     async def _scrape_page(
         self, page: Page, manifest: TaskManifest

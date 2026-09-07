@@ -1,0 +1,207 @@
+{
+  "name": "Facebook Scraper AI Autonomous Agent Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fb-scrape-task",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "node-1-trigger",
+      "name": "1. User Input Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "# Node 1: Pre-process and normalize user request\nprompt = _input.all()[0].json.get('body', {}).get('prompt') or _input.all()[0].json.get('prompt') or 'Extract 5 posts from Python Devs group in Markdown'\nheadless = _input.all()[0].json.get('body', {}).get('headless', True)\n\nreturn [{'json': {'prompt': prompt.strip(), 'headless': headless}}]"
+      },
+      "id": "node-2-input-python",
+      "name": "2. Input Normalizer (Python)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/compile",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt\": \"{{ $json.prompt }}\"\n}"
+      },
+      "id": "node-3-ai-compiler",
+      "name": "3. AI Task Compiler Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/scrape",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"manifest\": {{ $json }},\n  \"headless\": {{ $('2. Input Normalizer (Python)').item.json.headless }}\n}"
+      },
+      "id": "node-4-playwright-scraper",
+      "name": "4. Playwright Scraper Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.posts_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-5-obstacle-check",
+      "name": "5. UI Obstacle / Login Wall Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "language": "python",
+        "pythonCode": "# Node 5a: AI Vision & Obstacle Diagnostic\nposts_count = _input.all()[0].json.get('posts_count', 0)\ngroups = _input.all()[0].json.get('group_records', [])\ngated = any(g.get('requires_joining') for g in groups)\n\nstatus_msg = 'Authentication login wall / anti-bot challenge encountered on live Facebook.' if not gated else 'Target group is private/gated.'\n\nreturn [{\n    'json': {\n        'obstacle_detected': True,\n        'diagnostic': status_msg,\n        'posts': [],\n        'group_records': groups,\n        'requires_human_session': True\n    }\n}]"
+      },
+      "id": "node-6-ai-vision-recovery",
+      "name": "6. AI Obstacle & Vision Diagnostic (Python/AI)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1360, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/synthesize",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"posts\": {{ $('4. Playwright Scraper Engine').item.json.posts || [] }},\n  \"group_records\": {{ $('4. Playwright Scraper Engine').item.json.group_records || [] }},\n  \"format\": \"{{ $('3. AI Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('3. AI Task Compiler Node').item.json.output_config.columns || '[]' }}\n}"
+      },
+      "id": "node-7-output-synthesizer",
+      "name": "7. Output Synthesizer (Python Formatter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1360, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"{{ $json.obstacle_detected ? 'obstacle_encountered' : 'success' }}\",\n  \"task_id\": \"{{ $('3. AI Task Compiler Node').item.json.task_id }}\",\n  \"posts_scraped\": {{ $('4. Playwright Scraper Engine').item.json.posts_count || 0 }},\n  \"result\": {{ $json.formatted_output ? JSON.stringify($json.formatted_output) : JSON.stringify($json.diagnostic) }}\n}"
+      },
+      "id": "node-8-return-response",
+      "name": "8. Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1640, 300]
+    }
+  ],
+  "connections": {
+    "1. User Input Trigger": {
+      "main": [
+        [
+          {
+            "node": "2. Input Normalizer (Python)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Input Normalizer (Python)": {
+      "main": [
+        [
+          {
+            "node": "3. AI Task Compiler Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. AI Task Compiler Node": {
+      "main": [
+        [
+          {
+            "node": "4. Playwright Scraper Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Playwright Scraper Engine": {
+      "main": [
+        [
+          {
+            "node": "5. UI Obstacle / Login Wall Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. UI Obstacle / Login Wall Check": {
+      "main": [
+        [
+          {
+            "node": "6. AI Obstacle & Vision Diagnostic (Python/AI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "7. Output Synthesizer (Python Formatter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. AI Obstacle & Vision Diagnostic (Python/AI)": {
+      "main": [
+        [
+          {
+            "node": "8. Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Output Synthesizer (Python Formatter)": {
+      "main": [
+        [
+          {
+            "node": "8. Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

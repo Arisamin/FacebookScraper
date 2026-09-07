@@ -37,9 +37,48 @@ class PipelineRequest(BaseModel):
     headless: bool = True
 
 
+class ScrapeRequest(BaseModel):
+    manifest: TaskManifest
+    headless: bool = True
+
+
+class ObstacleRequest(BaseModel):
+    screenshot_base64: str
+    target_action: str = "expand_see_more"
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "FacebookScraper Bridge"}
+
+
+@app.post("/scrape")
+async def scrape_endpoint(req: ScrapeRequest):
+    """Execute raw Playwright scraping for a given TaskManifest."""
+    try:
+        posts, group_records = await scraper.execute_task(req.manifest, headless=req.headless)
+        return {
+            "status": "success",
+            "posts": [p.model_dump() for p in posts],
+            "group_records": [g.model_dump() for g in group_records],
+            "posts_count": len(posts),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/solve-obstacle")
+def solve_obstacle(req: ObstacleRequest):
+    """Use AI vision to locate coordinates or resolve obstacles in a screenshot."""
+    import base64
+    try:
+        img_bytes = base64.b64decode(req.screenshot_base64)
+        location = scraper.vision_handler.locate_target_in_crop(img_bytes, req.target_action)
+        if location:
+            return {"status": "success", "element_location": location.model_dump()}
+        return {"status": "unresolved", "message": "Could not identify target action visually"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/compile", response_model=TaskManifest)
