@@ -64,6 +64,6 @@
   - **Goal**: Assemble tested components into ready-to-import n8n workflow templates (`.json`) and FastAPI bridge for your Hetzner instance.
   - **Status**: ✅ Completed & Tested (`n8n_workflows/facebook_scraper_workflow.json`, `tests/test_n8n_bridge.py`).
 
-- [ ] **Phase 6: Manual Sandbox Test Plan & Sign-Off**
+- [x] **Phase 6: Manual Sandbox Test Plan & Sign-Off**
   - **Goal**: Provide a step-by-step test plan for running live scrapes and verifying data in n8n.
-  - **Status**: 🔄 In Progress.
+  - **Status**: ✅ Completed & Documented in `docs/SANDBOX_TEST_PLAN.md`.
