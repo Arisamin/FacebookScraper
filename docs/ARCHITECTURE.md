@@ -179,6 +179,51 @@ The Task Compiler translates free-form natural language instructions into a stri
 
 ---
 
+## 5. Execution Model: n8n Workflow & FastAPI Bridge Architecture
+
+To decouple complex browser automation and AI SDK dependencies from n8n's workflow engine, the system uses a **FastAPI Microservice Bridge** pattern:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  N8N ORCHESTRATION CANVAS                              │
+│                                                                                        │
+│  [1. Webhook] ──► [2. Normalizer] ──► [3. AI Compiler] ──► [4. Playwright Scraper]   │
+│                                                                      │                 │
+│  [8. Return] ◄── [7. Formatter]   ◄── [5. Obstacle Check] ◄──────────┘                 │
+│         ▲                                    │                                         │
+│         └─────── [6. Vision Diagnostic] ◄────┘ (0 posts / login wall)                  │
+└───────────────────────────┬──────────────────────────────────┬─────────────────────────┘
+                            │                                  │
+                  HTTP POST │ /compile               HTTP POST │ /scrape
+                            ▼                                  ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                       FASTAPI BRIDGE MICROSERVICE (src/n8n_bridge/)                    │
+│                                                                                        │
+│  • Endpoint /compile ────────► Calls Google Gemini API (gemini-2.0-flash via REST)     │
+│                                 Translates prompt ➔ TaskManifest JSON                  │
+│                                                                                        │
+│  • Endpoint /scrape ─────────► Launches Playwright Chromium Engine (async)             │
+│                                 Navigates Facebook, extracts DOM, applies filters      │
+│                                                                                        │
+│  • Endpoint /solve-obstacle ─► Calls Google Gemini Vision API (b64 cropped screenshot) │
+│                                 Detects coordinate offsets for self-healing clicks     │
+│                                                                                        │
+│  • Endpoint /synthesize ─────► Executes formatters (Markdown, CSV, Mermaid, JSON)      │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### How the AI Model (Google Gemini) is Contacted in the Flow:
+1. **Credentials**: The FastAPI bridge loads `GEMINI_API_KEY` from `.env` on startup.
+2. **Task Compilation (`/compile`)**:
+   - `TaskCompiler` (`src/compiler/task_compiler.py`) formats the user's prompt alongside `SYSTEM_COMPILER_PROMPT`.
+   - Sends a REST request to `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}`.
+   - Gemini returns structured JSON matching `TaskManifest`.
+3. **Obstacle Solving (`/solve-obstacle`)**:
+   - When Playwright encounters interactive obstacles (popups, "See more" buttons, login prompts), it captures a base64 screenshot crop.
+   - `VisionFallbackHandler` (`src/scraper/vision_fallback.py`) calls Gemini Vision with `inline_data` to locate target click coordinates.
+
+---
+
 ## 5. Directory & Package Structure
 
 ```
