@@ -1,0 +1,92 @@
+{
+  "name": "Facebook Scraper AI Autonomous Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fb-scrape-task",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/compile",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt\": \"{{ $json.body.prompt }}\"\n}"
+      },
+      "id": "2",
+      "name": "Task Compiler Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/synthesize",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"posts\": {{ $json.posts }},\n  \"group_records\": {{ $json.group_records }},\n  \"format\": \"{{ $('Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('Task Compiler Node').item.json.output_config.columns }}\n}"
+      },
+      "id": "3",
+      "name": "Output Synthesizer Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"status\": \"success\",\n  \"task_id\": \"{{ $('Task Compiler Node').item.json.task_id }}\",\n  \"result\": {{ $json.formatted_output }}\n}"
+      },
+      "id": "4",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [950, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Task Compiler Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Compiler Node": {
+      "main": [
+        [
+          {
+            "node": "Output Synthesizer Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Synthesizer Node": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

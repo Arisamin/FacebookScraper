@@ -48,22 +48,22 @@
   - **Goal**: Lock in JSON schemas, target Facebook surfaces, extraction payloads, and error states in `docs/ARCHITECTURE.md`.
   - **Status**: ✅ Completed & Documented in `docs/ARCHITECTURE.md`.
 
-- [ ] **Phase 2: TDD Component 1 — Human Language Task Compiler**
+- [x] **Phase 2: TDD Component 1 — Human Language Task Compiler**
   - **Goal**: Converts natural human language prompts into validated structured JSON manifests.
-  - **Recommended Mode**: *Main Session + `task` Subagent* (silent test execution).
+  - **Status**: ✅ Completed & Tested (`tests/test_task_compiler.py`).
 
-- [ ] **Phase 3: TDD Component 2 — Resilient Playwright & Semantic Extractor**
+- [x] **Phase 3: TDD Component 2 — Resilient Playwright & Semantic Extractor**
   - **Goal**: Anti-detection, cookie manager, accessibility tree DOM extraction, and AI obstacle recovery.
-  - **Recommended Mode**: *Forked Session (`/fork browser-tdd`)* or *`explore` Subagent*.
+  - **Status**: ✅ Completed & Tested (`tests/test_dom_extractor.py`, `tests/test_group_scanner.py`, `tests/test_vision_fallback.py`).
 
-- [ ] **Phase 4: TDD Component 3 — Output Synthesizer & Formatters**
+- [x] **Phase 4: TDD Component 3 — Output Synthesizer & Formatters**
   - **Goal**: Converts extracted post payloads into Markdown tables, CSV exports, text summaries, and Mermaid diagrams.
-  - **Recommended Mode**: *Main Session + `task` Subagent* (rapid red/green unit testing).
+  - **Status**: ✅ Completed & Tested (`tests/test_output_synthesizer.py`).
 
-- [ ] **Phase 5: n8n Workflow Packaging & Hetzner Deployment**
-  - **Goal**: Assemble tested components into ready-to-import n8n workflow templates (`.json`) for your Hetzner instance.
-  - **Recommended Mode**: *Main Session + `research` Subagent* (Hetzner environment validation).
+- [x] **Phase 5: n8n Workflow Packaging & Hetzner Deployment**
+  - **Goal**: Assemble tested components into ready-to-import n8n workflow templates (`.json`) and FastAPI bridge for your Hetzner instance.
+  - **Status**: ✅ Completed & Tested (`n8n_workflows/facebook_scraper_workflow.json`, `tests/test_n8n_bridge.py`).
 
 - [ ] **Phase 6: Manual Sandbox Test Plan & Sign-Off**
   - **Goal**: Provide a step-by-step test plan for running live scrapes and verifying data in n8n.
-  - **Recommended Mode**: *Main Session*.
+  - **Status**: 🔄 In Progress.
