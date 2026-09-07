@@ -17,7 +17,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8000/compile",
+        "url": "http://127.0.0.1:8000/compile",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"prompt\": \"{{ $json.body.prompt }}\"\n}"
@@ -31,7 +31,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8000/synthesize",
+        "url": "http://127.0.0.1:8000/synthesize",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"posts\": {{ $json.posts }},\n  \"group_records\": {{ $json.group_records }},\n  \"format\": \"{{ $('Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('Task Compiler Node').item.json.output_config.columns }}\n}"
