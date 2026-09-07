@@ -86,6 +86,12 @@ class TaskCompiler:
         target_type = TargetType.GROUP_SEARCH
         url_or_query = ""
         location = None
+        max_posts = 50
+
+        # Scan limits
+        posts_limit_match = re.search(r"(?:extract|find|get|scrape|latest|top)\s+(\d+)\s+posts?", prompt_lower)
+        if posts_limit_match:
+            max_posts = int(posts_limit_match.group(1))
 
         if "marketplace" in prompt_lower:
             target_type = TargetType.MARKETPLACE
@@ -106,15 +112,19 @@ class TaskCompiler:
             if match:
                 url_or_query = match.group(1).strip()
             else:
-                match2 = re.search(r"search in all groups (?:about|for|named|with)?\s*([^,\.]+)", prompt, re.IGNORECASE)
-                url_or_query = match2.group(1).strip() if match2 else "furniture"
+                match_named = re.search(r"(?:from|in|about)\s+(?:the\s+)?(['\"]?)([A-Za-z0-9\s._-]+?)\1\s+(?:group|page)", prompt, re.IGNORECASE)
+                if match_named:
+                    url_or_query = match_named.group(2).strip()
+                else:
+                    match2 = re.search(r"search in all groups (?:about|for|named|with)?\s*([^,\.]+)", prompt, re.IGNORECASE)
+                    url_or_query = match2.group(1).strip() if match2 else "facebook groups"
 
-        # Location detection
+        # Location detection (ignoring formatting words like Markdown, CSV, JSON, Table)
+        format_words = {"markdown", "table", "csv", "json", "mermaid", "diagram", "summary", "which", "all", "the", "a"}
         loc_match = re.search(r"\bin\s+([A-Z][a-zA-Z\s]+?)(?:,|\s+in\s+which|\s+under|\s+export|\s+output|$)", prompt)
         if loc_match:
             loc_candidate = loc_match.group(1).strip()
-            # Filter common false positives
-            if loc_candidate.lower() not in ["which", "all", "the", "a"]:
+            if loc_candidate.lower() not in format_words:
                 location = loc_candidate
         elif "israel" in prompt_lower:
             location = "Israel"
@@ -208,7 +218,7 @@ class TaskCompiler:
                 type=target_type,
                 url_or_query=url_or_query or "facebook search",
                 location=location,
-                max_posts_to_scan=50,
+                max_posts_to_scan=max_posts,
                 max_scrolls=10,
             ),
             criteria=FilterCriteria(
