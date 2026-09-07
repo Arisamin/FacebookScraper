@@ -16,11 +16,10 @@
     },
     {
       "parameters": {
-        "language": "python",
-        "pythonCode": "# Node 1: Pre-process and normalize user request\nprompt = _input.all()[0].json.get('body', {}).get('prompt') or _input.all()[0].json.get('prompt') or 'Extract 5 posts from Python Devs group in Markdown'\nheadless = _input.all()[0].json.get('body', {}).get('headless', True)\n\nreturn [{'json': {'prompt': prompt.strip(), 'headless': headless}}]"
+        "jsCode": "// Node 1: Pre-process and normalize user request\nconst input = $input.first().json;\nconst prompt = input.body?.prompt || input.prompt || 'Extract 5 posts from Python Devs group in Markdown';\nconst headless = input.body?.headless !== undefined ? input.body.headless : true;\n\nreturn [{\n  json: {\n    prompt: prompt.trim(),\n    headless: headless\n  }\n}];"
       },
       "id": "node-2-input-python",
-      "name": "2. Input Normalizer (Python)",
+      "name": "2. Input Normalizer (Code)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [400, 300]
@@ -83,11 +82,10 @@
     },
     {
       "parameters": {
-        "language": "python",
-        "pythonCode": "# Node 5a: AI Vision & Obstacle Diagnostic\nposts_count = _input.all()[0].json.get('posts_count', 0)\ngroups = _input.all()[0].json.get('group_records', [])\ngated = any(g.get('requires_joining') for g in groups)\n\nstatus_msg = 'Authentication login wall / anti-bot challenge encountered on live Facebook.' if not gated else 'Target group is private/gated.'\n\nreturn [{\n    'json': {\n        'obstacle_detected': True,\n        'diagnostic': status_msg,\n        'posts': [],\n        'group_records': groups,\n        'requires_human_session': True\n    }\n}]"
+        "jsCode": "// Node 6: AI Vision & Obstacle Diagnostic\nconst input = $input.first().json;\nconst postsCount = input.posts_count || 0;\nconst groups = input.group_records || [];\nconst gated = groups.some(g => g.requires_joining);\n\nconst statusMsg = !gated \n  ? 'Authentication login wall or anti-bot challenge encountered on live Facebook (no active session cookies found in session_storage.json).' \n  : 'Target group is private/gated and requires joining approval.';\n\nreturn [{\n  json: {\n    obstacle_detected: true,\n    diagnostic: statusMsg,\n    posts: [],\n    group_records: groups,\n    requires_human_session: true\n  }\n}];"
       },
       "id": "node-6-ai-vision-recovery",
-      "name": "6. AI Obstacle & Vision Diagnostic (Python/AI)",
+      "name": "6. AI Obstacle & Vision Diagnostic",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1360, 180]
