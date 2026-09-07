@@ -47,35 +47,54 @@ class TaskCompiler:
                 raw_data = json.loads(raw_data)
             return TaskManifest.model_validate(raw_data)
 
-        # 2. If OpenAI API key is present in environment, call LLM
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key and openai_key.startswith("sk-"):
+        # 2. If Google Gemini API key is present in environment, call Gemini
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
             try:
-                return self._call_openai(clean_prompt, openai_key)
+                return self._call_google_gemini(clean_prompt, gemini_key)
             except Exception:
                 # Fallback to heuristic parser on API error/timeout
                 pass
 
-        # 3. Deterministic heuristic compiler (offline / test mode)
+        # 3. Deterministic heuristic compiler (offline / fallback mode)
         return self._heuristic_compile(clean_prompt)
 
-    def _call_openai(self, prompt: str, api_key: str) -> TaskManifest:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+    def _call_google_gemini(self, prompt: str, api_key: str) -> TaskManifest:
+        """Call Google Gemini REST API using standard HTTP client."""
+        import urllib.request
+        import urllib.error
 
-        response = client.chat.completions.create(
-            model=os.getenv("COMPILER_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": SYSTEM_COMPILER_PROMPT},
-                {"role": "user", "content": prompt},
+        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": f"{SYSTEM_COMPILER_PROMPT}\n\nUser Prompt to compile into TaskManifest JSON:\n{prompt}"
+                        }
+                    ]
+                }
             ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.1,
+            },
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
 
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        return TaskManifest.model_validate(data)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+            manifest_dict = json.loads(raw_text)
+            return TaskManifest.model_validate(manifest_dict)
 
     def _heuristic_compile(self, prompt: str) -> TaskManifest:
         """Deterministic heuristic rule-based parser for offline execution and testing."""

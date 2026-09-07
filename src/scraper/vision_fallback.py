@@ -47,43 +47,58 @@ class VisionFallbackHandler:
             result = self.ai_detector(image_bytes, target_action)
             return TargetElementLocation.model_validate(result)
 
-        # Fallback to OpenAI vision if OPENAI_API_KEY is configured
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if openai_key and openai_key.startswith("sk-"):
+        # Fallback to Google Gemini Vision if GEMINI_API_KEY is configured
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
             try:
-                return self._call_vision_llm(image_bytes, target_action, openai_key)
+                return self._call_gemini_vision(image_bytes, target_action, gemini_key)
             except Exception:
                 pass
 
         return None
 
-    def _call_vision_llm(self, image_bytes: bytes, target_action: str, api_key: str) -> TargetElementLocation:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+    def _call_gemini_vision(self, image_bytes: bytes, target_action: str, api_key: str) -> TargetElementLocation:
+        import urllib.request
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
+        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
         prompt = (
             f"Analyze this cropped component screenshot. We need to perform action: '{target_action}' "
             "(e.g., clicking 'See more' / 'Show more' / 'Join Group'). "
-            "Return a JSON object with: { 'target_label': string, 'relative_x': int, 'relative_y': int, 'confidence': float } "
+            "Return a JSON object with: { \"target_label\": string, \"relative_x\": int, \"relative_y\": int, \"confidence\": float } "
             "where relative_x and relative_y are the exact pixel coordinates within this cropped image."
         )
 
-        response = client.chat.completions.create(
-            model=os.getenv("VISION_MODEL", "gpt-4o-mini"),
-            messages=[
+        payload = {
+            "contents": [
                 {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_image}"}},
-                    ],
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": b64_image,
+                            }
+                        },
+                    ]
                 }
             ],
-            response_format={"type": "json_object"},
-            temperature=0.0,
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.0,
+            },
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
 
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        return TargetElementLocation.model_validate(data)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+            res_dict = json.loads(raw_text)
+            return TargetElementLocation.model_validate(res_dict)

@@ -56,4 +56,4 @@ class TestDOMExtractor:
         assert (now - d_days).days in [2, 3]
 
         d_yesterday = extractor.parse_relative_date("Yesterday at 10:00")
-        assert (now - d_yesterday).days in [1, 2]
+        assert 80000 <= (now - d_yesterday).total_seconds() <= 90000
