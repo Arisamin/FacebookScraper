@@ -149,7 +149,7 @@
         "url": "http://127.0.0.1:8000/synthesize",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  posts: $('6. Playwright Scraper Engine').item.json.posts || [],\n  group_records: $('6. Playwright Scraper Engine').item.json.group_records || [],\n  format: $('3. AI Task Compiler Node').item.json.output_config?.format || 'markdown_table',\n  columns: $('3. AI Task Compiler Node').item.json.output_config?.columns || []\n}) }}"
+        "jsonBody": "={{ JSON.stringify({\n  posts: $('6. Playwright Scraper Engine').item.json.posts || [],\n  group_records: $('6. Playwright Scraper Engine').item.json.group_records || [],\n  format: $('3. AI Task Compiler Node').item.json.output_config?.format || 'markdown_table',\n  columns: $('3. AI Task Compiler Node').item.json.output_config?.columns || [],\n  custom_instructions: $('3. AI Task Compiler Node').item.json.output_config?.custom_instructions || '',\n  original_prompt: $('2. Input Normalizer').item.json.prompt || ''\n}) }}"
       },
       "id": "node-8b-output-synthesizer",
       "name": "8b. Output Synthesizer",

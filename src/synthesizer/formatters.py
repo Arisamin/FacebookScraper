@@ -1,14 +1,18 @@
-"""Output Synthesizer: Formats scraped posts and gated group records into CSV, Markdown, Diagrams, and JSON."""
+"""Output Synthesizer: Formats scraped posts and gated group records into arbitrary formats using AI or deterministic rules."""
 
+import os
 import io
 import csv
 import json
+import logging
 from typing import List, Optional, Dict, Any
 from src.models.post import PostPayload, GroupRecord
 
+logger = logging.getLogger("OutputSynthesizer")
+
 
 class OutputSynthesizer:
-    """Transforms scraped data structures into various user-requested formats."""
+    """Transforms scraped data structures into various user-requested formats using AI or deterministic formatters."""
 
     DEFAULT_COLUMNS = [
         "GroupName",
@@ -17,6 +21,148 @@ class OutputSynthesizer:
         "date of publish",
         "description snippet (up to 40 words)",
     ]
+
+    def synthesize(
+        self,
+        posts: List[PostPayload],
+        group_records: List[GroupRecord],
+        format: str = "markdown_table",
+        columns: Optional[List[str]] = None,
+        custom_instructions: Optional[str] = None,
+        original_prompt: Optional[str] = None,
+    ) -> str:
+        """
+        Universal synthesis router.
+        If standard format and no special AI instructions: use high-speed deterministic rules.
+        If custom format (XML, YAML, LaTeX, HTML/CSS, custom schema) or AI instructions: invoke Google Gemini.
+        """
+        fmt_low = (format or "markdown_table").lower().strip()
+
+        # If standard format and no custom instructions/prompt, use fast deterministic formatters
+        if not custom_instructions:
+            if fmt_low in ("csv",):
+                return self.format_csv(posts, group_records, columns)
+            elif fmt_low in ("markdown_table", "markdown", "md"):
+                return self.format_markdown_table(posts, group_records, columns)
+            elif fmt_low in ("html_table", "html"):
+                return self.format_html_table(posts, group_records, columns)
+            elif fmt_low in ("diagram_mermaid", "mermaid_diagram", "mermaid"):
+                return self.format_mermaid_diagram(posts, group_records)
+            elif fmt_low in ("json",):
+                return self.format_json(posts, group_records)
+
+        # For any custom or LLM-instructed format (XML, YAML, custom HTML, LaTeX, executive summary, etc.),
+        # invoke Google Gemini AI Synthesizer
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
+            try:
+                return self.ai_synthesize(
+                    posts=posts,
+                    group_records=group_records,
+                    target_format=format,
+                    custom_instructions=custom_instructions,
+                    original_prompt=original_prompt,
+                )
+            except Exception as e:
+                logger.warning(f"AI synthesizer call failed: {e}. Falling back to deterministic formatter.")
+
+        # Fallback to standard deterministic formatters if AI is offline
+        if "html" in fmt_low:
+            return self.format_html_table(posts, group_records, columns)
+        elif "csv" in fmt_low:
+            return self.format_csv(posts, group_records, columns)
+        elif "json" in fmt_low:
+            return self.format_json(posts, group_records)
+        else:
+            return self.format_markdown_table(posts, group_records, columns)
+
+    def ai_synthesize(
+        self,
+        posts: List[PostPayload],
+        group_records: List[GroupRecord],
+        target_format: str = "markdown_table",
+        custom_instructions: Optional[str] = None,
+        original_prompt: Optional[str] = None,
+    ) -> str:
+        """
+        Use Google Gemini to format structured post payloads into any user-requested format
+        (e.g., XML, YAML, LaTeX, HTML, custom markdown, executive summary, etc.).
+        """
+        import urllib.request
+        import urllib.error
+
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY / GOOGLE_API_KEY is not set.")
+
+        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+        posts_data = [
+            {
+                "group_name": p.group_name or "N/A",
+                "author": p.author_name or "Unknown",
+                "published_at": p.published_at.strftime("%Y-%m-%d %H:%M") if p.published_at else (p.timestamp_str or "Recent"),
+                "price": f"{p.price} NIS" if p.price is not None else None,
+                "url": p.post_url or p.permalink or "N/A",
+                "snippet": p.snippet or p.content_text,
+            }
+            for p in posts
+        ]
+        groups_data = [
+            {
+                "group_name": g.group_name,
+                "url": g.group_url,
+                "requires_joining": g.requires_joining,
+            }
+            for g in group_records
+        ]
+
+        system_instruction = (
+            "You are an expert Data Synthesizer AI agent in an intelligent web scraping automation pipeline.\n"
+            "Your task is to transform the provided structured Facebook post and group records into the EXACT output format requested by the user.\n"
+            f"Requested Target Format: {target_format}\n"
+            f"User Instructions / Prompt: {custom_instructions or original_prompt or 'Format the records cleanly according to target format.'}\n\n"
+            "Formatting Rules:\n"
+            "1. Output ONLY the raw formatted result (e.g. valid HTML, valid XML, valid YAML, valid LaTeX, clean Markdown, clean JSON, etc.).\n"
+            "2. Do NOT include any conversational introduction, greetings, or explanations.\n"
+            "3. If formatting in HTML/XML, ensure tags are properly closed and escaped.\n"
+            "4. If formatting in Markdown/HTML/XML, make sure post URLs are rendered as clickable links where applicable."
+        )
+
+        user_content = json.dumps({"posts": posts_data, "groups": groups_data}, indent=2, ensure_ascii=False)
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": f"{system_instruction}\n\nInput Scraped Data (JSON):\n{user_content}"
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+            },
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            # If wrapped in markdown code blocks, strip them if the target format is HTML/XML/YAML/JSON
+            if raw_text.startswith("```") and raw_text.endswith("```"):
+                lines = raw_text.split("\n")
+                if len(lines) >= 3:
+                    raw_text = "\n".join(lines[1:-1]).strip()
+            return raw_text
 
     def format_csv(
         self,

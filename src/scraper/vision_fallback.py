@@ -60,7 +60,7 @@ class VisionFallbackHandler:
     def _call_gemini_vision(self, image_bytes: bytes, target_action: str, api_key: str) -> TargetElementLocation:
         import urllib.request
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
-        model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
         prompt = (

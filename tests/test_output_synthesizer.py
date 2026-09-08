@@ -105,3 +105,21 @@ class TestOutputSynthesizer:
         assert "Secret Antique Furniture Club" in html_out
         assert "Requires Joining" in html_out
 
+    def test_universal_synthesizer_routing(self, sample_data):
+        posts, group_records = sample_data
+        synthesizer = OutputSynthesizer()
+
+        # Deterministic standard format routes
+        res_csv = synthesizer.synthesize(posts, group_records, format="csv")
+        assert "GroupName,Requires joining" in res_csv
+
+        res_html = synthesizer.synthesize(posts, group_records, format="html_table")
+        assert "<table" in res_html
+
+        res_md = synthesizer.synthesize(posts, group_records, format="markdown_table")
+        assert "| GroupName |" in res_md or "| Group Name |" in res_md
+
+        res_json = synthesizer.synthesize(posts, group_records, format="json")
+        assert '"posts"' in res_json
+
+

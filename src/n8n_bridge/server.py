@@ -28,8 +28,10 @@ class CompileRequest(BaseModel):
 class SynthesizeRequest(BaseModel):
     posts: List[PostPayload] = []
     group_records: List[GroupRecord] = []
-    format: OutputFormat = OutputFormat.CSV
+    format: str = "markdown_table"
     columns: Optional[List[str]] = None
+    custom_instructions: Optional[str] = None
+    original_prompt: Optional[str] = None
 
 
 class PipelineRequest(BaseModel):
@@ -136,16 +138,14 @@ async def run_pipeline(req: PipelineRequest):
         manifest = compiler.compile(req.prompt)
         posts, group_records = await scraper.execute_task(manifest, headless=req.headless)
 
-        if manifest.output_config.format == OutputFormat.CSV:
-            formatted = synthesizer.format_csv(posts, group_records, manifest.output_config.columns)
-        elif manifest.output_config.format == OutputFormat.HTML_TABLE:
-            formatted = synthesizer.format_html_table(posts, group_records, manifest.output_config.columns)
-        elif manifest.output_config.format == OutputFormat.MARKDOWN_TABLE:
-            formatted = synthesizer.format_markdown_table(posts, group_records, manifest.output_config.columns)
-        elif manifest.output_config.format == OutputFormat.DIAGRAM_MERMAID:
-            formatted = synthesizer.format_mermaid_diagram(posts, group_records)
-        else:
-            formatted = synthesizer.format_json(posts, group_records)
+        formatted = synthesizer.synthesize(
+            posts=posts,
+            group_records=group_records,
+            format=manifest.output_config.format,
+            columns=manifest.output_config.columns,
+            custom_instructions=manifest.output_config.custom_instructions,
+            original_prompt=req.prompt,
+        )
 
         return {
             "status": "success",
@@ -161,18 +161,16 @@ async def run_pipeline(req: PipelineRequest):
 
 @app.post("/synthesize")
 def synthesize_data(req: SynthesizeRequest):
-    """Synthesize post and group records into requested format (CSV, Markdown, Mermaid, JSON)."""
+    """Synthesize post and group records into any requested format using AI or deterministic rules."""
     try:
-        if req.format == OutputFormat.CSV:
-            formatted = synthesizer.format_csv(req.posts, req.group_records, req.columns)
-        elif req.format == OutputFormat.HTML_TABLE:
-            formatted = synthesizer.format_html_table(req.posts, req.group_records, req.columns)
-        elif req.format == OutputFormat.MARKDOWN_TABLE:
-            formatted = synthesizer.format_markdown_table(req.posts, req.group_records, req.columns)
-        elif req.format == OutputFormat.DIAGRAM_MERMAID:
-            formatted = synthesizer.format_mermaid_diagram(req.posts, req.group_records)
-        else:
-            formatted = synthesizer.format_json(req.posts, req.group_records)
+        formatted = synthesizer.synthesize(
+            posts=req.posts,
+            group_records=req.group_records,
+            format=req.format,
+            columns=req.columns,
+            custom_instructions=req.custom_instructions,
+            original_prompt=req.original_prompt,
+        )
 
         return {
             "format": req.format,

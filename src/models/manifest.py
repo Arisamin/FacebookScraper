@@ -18,8 +18,12 @@ class OutputFormat(str, Enum):
     HTML_TABLE = "html_table"
     CSV = "csv"
     JSON = "json"
+    XML = "xml"
+    YAML = "yaml"
+    LATEX = "latex"
     EXECUTIVE_SUMMARY = "executive_summary"
     MERMAID_DIAGRAM = "mermaid_diagram"
+    CUSTOM = "custom"
 
 
 class ActionType(str, Enum):
@@ -54,7 +58,8 @@ class FilterCriteria(BaseModel):
 
 
 class OutputConfig(BaseModel):
-    format: OutputFormat = OutputFormat.MARKDOWN_TABLE
+    format: str = "markdown_table"
+    custom_instructions: Optional[str] = None
     columns: Optional[List[str]] = None
     snippet_max_words: Optional[int] = 40
     destination_path: Optional[str] = None
