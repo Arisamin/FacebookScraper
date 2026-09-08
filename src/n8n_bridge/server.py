@@ -47,9 +47,47 @@ class ObstacleRequest(BaseModel):
     target_action: str = "expand_see_more"
 
 
+class SessionInjectRequest(BaseModel):
+    storage_state: Dict[str, Any]
+
+
+class LoginRequest(BaseModel):
+    timeout_seconds: int = 120
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "FacebookScraper Bridge"}
+
+
+@app.get("/session/status")
+def session_status():
+    """Check if an active session exists in session_storage.json."""
+    valid = scraper.session_manager.has_valid_session()
+    return {
+        "has_valid_session": valid,
+        "storage_state_path": scraper.session_manager.storage_state_path,
+    }
+
+
+@app.post("/session/login")
+async def trigger_login(req: LoginRequest = LoginRequest()):
+    """Trigger an interactive login window to capture fresh session cookies."""
+    success = await scraper.session_manager.launch_interactive_login(timeout_seconds=req.timeout_seconds)
+    if success:
+        return {"status": "authenticated", "has_valid_session": True}
+    return {
+        "status": "timeout_or_unauthenticated",
+        "has_valid_session": False,
+        "message": "Login window closed or timed out before authentication cookies were detected."
+    }
+
+
+@app.post("/session/inject")
+def inject_session(req: SessionInjectRequest):
+    """Inject a storage state JSON (cookies & localStorage) programmatically."""
+    scraper.session_manager.save_storage_state(req.storage_state)
+    return {"status": "injected", "has_valid_session": True}
 
 
 @app.post("/scrape")

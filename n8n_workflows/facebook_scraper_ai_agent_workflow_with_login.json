@@ -1,0 +1,298 @@
+{
+  "name": "Facebook Scraper AI Autonomous Agent Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fb-scrape-task",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-1-trigger",
+      "name": "1. User Input Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [160, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pre-process and normalize user request\nconst input = $input.first().json;\nconst prompt = input.body?.prompt || input.prompt || 'Extract 5 posts from Python Devs group in Markdown';\nconst headless = input.body?.headless !== undefined ? input.body.headless : true;\nconst forceLogin = input.body?.force_login || input.force_login || false;\n\nreturn [{\n  json: {\n    prompt: prompt.trim(),\n    headless: headless,\n    force_login: forceLogin\n  }\n}];"
+      },
+      "id": "node-2-input-normalizer",
+      "name": "2. Input Normalizer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/compile",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"prompt\": \"{{ $json.prompt }}\"\n}"
+      },
+      "id": "node-3-ai-compiler",
+      "name": "3. AI Task Compiler Node",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:8000/session/status"
+      },
+      "id": "node-4-session-check",
+      "name": "4. Check Session Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-has-session",
+              "leftValue": "={{ $json.has_valid_session }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-5-session-if",
+      "name": "5. Is Session Authenticated?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/session/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"timeout_seconds\": 120\n}"
+      },
+      "id": "node-5a-login-trigger",
+      "name": "5a. Interactive Login Invocation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1160, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/scrape",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  manifest: $('3. AI Task Compiler Node').item.json,\n  headless: $('2. Input Normalizer').item.json.headless !== undefined ? $('2. Input Normalizer').item.json.headless : true\n}) }}"
+      },
+      "id": "node-6-playwright-scraper",
+      "name": "6. Playwright Scraper Engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1360, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-1",
+              "leftValue": "={{ $json.posts_count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "node-7-obstacle-check",
+      "name": "7. UI Obstacle Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1580, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obstacle diagnostic\nconst input = $input.first().json;\nconst postsCount = input.posts_count || 0;\nconst groups = input.group_records || [];\nconst gated = groups.some(g => g.requires_joining);\n\nconst statusMsg = !gated \n  ? 'Authentication login wall or anti-bot challenge encountered on live Facebook (no active session cookies in session_storage.json).' \n  : 'Target group is private/gated and requires joining approval.';\n\nreturn [{\n  json: {\n    obstacle_detected: true,\n    diagnostic: statusMsg,\n    posts: [],\n    group_records: groups,\n    requires_human_session: true\n  }\n}];"
+      },
+      "id": "node-8a-ai-vision-recovery",
+      "name": "8a. AI Obstacle Diagnostic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1800, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/synthesize",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  posts: $('6. Playwright Scraper Engine').item.json.posts || [],\n  group_records: $('6. Playwright Scraper Engine').item.json.group_records || [],\n  format: $('3. AI Task Compiler Node').item.json.output_config?.format || 'markdown_table',\n  columns: $('3. AI Task Compiler Node').item.json.output_config?.columns || []\n}) }}"
+      },
+      "id": "node-8b-output-synthesizer",
+      "name": "8b. Output Synthesizer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1800, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  status: $json.obstacle_detected ? 'obstacle_encountered' : 'success',\n  task_id: $('3. AI Task Compiler Node').item.json.task_id,\n  posts_scraped: $('6. Playwright Scraper Engine').item.json.posts_count || 0,\n  result: $json.formatted_output !== undefined ? $json.formatted_output : $json.diagnostic\n}) }}"
+      },
+      "id": "node-9-return-response",
+      "name": "9. Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2040, 300]
+    }
+  ],
+  "connections": {
+    "1. User Input Trigger": {
+      "main": [
+        [
+          {
+            "node": "2. Input Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Input Normalizer": {
+      "main": [
+        [
+          {
+            "node": "3. AI Task Compiler Node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. AI Task Compiler Node": {
+      "main": [
+        [
+          {
+            "node": "4. Check Session Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Check Session Status": {
+      "main": [
+        [
+          {
+            "node": "5. Is Session Authenticated?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Is Session Authenticated?": {
+      "main": [
+        [
+          {
+            "node": "6. Playwright Scraper Engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "5a. Interactive Login Invocation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5a. Interactive Login Invocation": {
+      "main": [
+        [
+          {
+            "node": "6. Playwright Scraper Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Playwright Scraper Engine": {
+      "main": [
+        [
+          {
+            "node": "7. UI Obstacle Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. UI Obstacle Check": {
+      "main": [
+        [
+          {
+            "node": "8a. AI Obstacle Diagnostic",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "8b. Output Synthesizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8a. AI Obstacle Diagnostic": {
+      "main": [
+        [
+          {
+            "node": "9. Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8b. Output Synthesizer": {
+      "main": [
+        [
+          {
+            "node": "9. Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
