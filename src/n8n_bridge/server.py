@@ -138,6 +138,8 @@ async def run_pipeline(req: PipelineRequest):
 
         if manifest.output_config.format == OutputFormat.CSV:
             formatted = synthesizer.format_csv(posts, group_records, manifest.output_config.columns)
+        elif manifest.output_config.format == OutputFormat.HTML_TABLE:
+            formatted = synthesizer.format_html_table(posts, group_records, manifest.output_config.columns)
         elif manifest.output_config.format == OutputFormat.MARKDOWN_TABLE:
             formatted = synthesizer.format_markdown_table(posts, group_records, manifest.output_config.columns)
         elif manifest.output_config.format == OutputFormat.DIAGRAM_MERMAID:
@@ -163,6 +165,8 @@ def synthesize_data(req: SynthesizeRequest):
     try:
         if req.format == OutputFormat.CSV:
             formatted = synthesizer.format_csv(req.posts, req.group_records, req.columns)
+        elif req.format == OutputFormat.HTML_TABLE:
+            formatted = synthesizer.format_html_table(req.posts, req.group_records, req.columns)
         elif req.format == OutputFormat.MARKDOWN_TABLE:
             formatted = synthesizer.format_markdown_table(req.posts, req.group_records, req.columns)
         elif req.format == OutputFormat.DIAGRAM_MERMAID:

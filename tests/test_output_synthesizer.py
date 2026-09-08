@@ -91,3 +91,17 @@ class TestOutputSynthesizer:
         assert '"posts"' in json_str
         assert '"gated_groups"' in json_str
         assert "p101" in json_str
+
+    def test_format_html_table(self, sample_data):
+        posts, group_records = sample_data
+        synthesizer = OutputSynthesizer()
+
+        html_out = synthesizer.format_html_table(posts, group_records)
+        assert "<table" in html_out
+        assert "<thead>" in html_out
+        assert "<tbody>" in html_out
+        assert "Furniture Buy &amp; Sell Israel" in html_out or "Furniture Buy & Sell Israel" in html_out
+        assert "Noa Bar" in html_out
+        assert "Secret Antique Furniture Club" in html_out
+        assert "Requires Joining" in html_out
+

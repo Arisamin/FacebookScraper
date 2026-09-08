@@ -193,7 +193,9 @@ class TaskCompiler:
 
         # Output Config & Custom Columns
         out_format = OutputFormat.CSV
-        if "markdown table" in prompt_lower or "markdown" in prompt_lower or "table" in prompt_lower:
+        if "html" in prompt_lower:
+            out_format = OutputFormat.HTML_TABLE
+        elif "markdown table" in prompt_lower or "markdown" in prompt_lower or "table" in prompt_lower:
             out_format = OutputFormat.MARKDOWN_TABLE
         elif "json" in prompt_lower:
             out_format = OutputFormat.JSON

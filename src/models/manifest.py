@@ -15,6 +15,7 @@ class TargetType(str, Enum):
 
 class OutputFormat(str, Enum):
     MARKDOWN_TABLE = "markdown_table"
+    HTML_TABLE = "html_table"
     CSV = "csv"
     JSON = "json"
     EXECUTIVE_SUMMARY = "executive_summary"

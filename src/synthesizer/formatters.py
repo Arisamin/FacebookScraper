@@ -116,6 +116,83 @@ class OutputSynthesizer:
 
         return "\n".join(rows)
 
+    def format_html_table(
+        self,
+        posts: List[PostPayload],
+        group_records: List[GroupRecord],
+        columns: Optional[List[str]] = None,
+    ) -> str:
+        """
+        Generate clean, responsive HTML table with embedded CSS styling.
+        """
+        import html
+        cols = columns or [
+            "GroupName",
+            "Status",
+            "Author",
+            "Price",
+            "Published",
+            "Link",
+            "Snippet",
+        ]
+
+        th_cells = "".join(f"<th style='padding: 10px; border: 1px solid #ddd; background-color: #f4f6f8; text-align: left;'>{html.escape(c)}</th>" for c in cols)
+        table_rows = []
+
+        # Matched posts
+        for p in posts:
+            td_cells = []
+            for c in cols:
+                c_low = c.lower()
+                if "group" in c_low:
+                    td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'>{html.escape(p.group_name or 'N/A')}</td>")
+                elif "status" in c_low or "join" in c_low:
+                    td_cells.append("<td style='padding: 8px; border: 1px solid #ddd; color: green;'>&#x2705; Accessible</td>")
+                elif "author" in c_low:
+                    td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'><strong>{html.escape(p.author_name or 'Unknown')}</strong></td>")
+                elif "price" in c_low:
+                    price_val = f"{p.price} NIS" if p.price is not None else "N/A"
+                    td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'>{html.escape(price_val)}</td>")
+                elif "date" in c_low or "published" in c_low:
+                    date_val = p.published_at.strftime("%Y-%m-%d %H:%M") if p.published_at else "Recent"
+                    td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'>{html.escape(date_val)}</td>")
+                elif "link" in c_low or "url" in c_low:
+                    if p.post_url:
+                        td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'><a href='{html.escape(p.post_url)}' target='_blank' rel='noopener noreferrer'>View Post</a></td>")
+                    else:
+                        td_cells.append("<td style='padding: 8px; border: 1px solid #ddd;'>N/A</td>")
+                elif "snippet" in c_low or "desc" in c_low or "content" in c_low:
+                    td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd; max-width: 400px; word-wrap: break-word;'>{html.escape(p.snippet or p.content_text)}</td>")
+                else:
+                    td_cells.append("<td style='padding: 8px; border: 1px solid #ddd;'></td>")
+            
+            table_rows.append(f"<tr>{''.join(td_cells)}</tr>")
+
+        # Gated groups
+        for g in group_records:
+            if g.requires_joining:
+                td_cells = []
+                for c in cols:
+                    c_low = c.lower()
+                    if "group" in c_low:
+                        td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'>{html.escape(g.group_name)}</td>")
+                    elif "status" in c_low or "join" in c_low:
+                        td_cells.append("<td style='padding: 8px; border: 1px solid #ddd; color: red;'>&#x1F512; Requires Joining</td>")
+                    elif "link" in c_low or "url" in c_low:
+                        link_val = f"<a href='{html.escape(g.group_url)}' target='_blank'>View Group</a>" if g.group_url else "N/A"
+                        td_cells.append(f"<td style='padding: 8px; border: 1px solid #ddd;'>{link_val}</td>")
+                    else:
+                        td_cells.append("<td style='padding: 8px; border: 1px solid #ddd;'>-</td>")
+                table_rows.append(f"<tr>{''.join(td_cells)}</tr>")
+
+        tbody_content = "\n".join(table_rows)
+        return (
+            "<table style='width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 14px;'>\n"
+            f"  <thead>\n    <tr>{th_cells}</tr>\n  </thead>\n"
+            f"  <tbody>\n{tbody_content}\n  </tbody>\n"
+            "</table>"
+        )
+
     def format_mermaid_diagram(
         self, posts: List[PostPayload], group_records: List[GroupRecord]
     ) -> str:

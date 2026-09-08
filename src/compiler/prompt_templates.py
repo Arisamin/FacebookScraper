@@ -23,7 +23,7 @@ Schema specification:
     "intent": null or "buyer_request" | "seller_offering" | "general_inquiry"
   },
   "output_config": {
-    "format": "csv" | "markdown_table" | "json" | "diagram_mermaid" | "executive_summary",
+    "format": "csv" | "markdown_table" | "html_table" | "json" | "diagram_mermaid" | "executive_summary",
     "columns": ["list", "of", "column", "names"] or null,
     "destination": "file" | "api_webhook" | "telegram" | "stdout",
     "output_file_path": null or "string",

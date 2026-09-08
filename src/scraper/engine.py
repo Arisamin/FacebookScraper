@@ -145,11 +145,13 @@ class ScraperEngine:
                         continue
 
                     # Extract posts from this group
-                    g_posts = await self._extract_posts_from_feed(page, manifest)
+                    grp_title = await page.title()
+                    clean_grp_name = grp_title.replace("| Facebook", "").replace("- Facebook", "").strip() or g_url.split("/groups/")[-1].strip("/")
+                    g_posts = await self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
                     posts.extend(g_posts)
                     group_records.append(
                         GroupRecord(
-                            group_name=g_url.split("/groups/")[-1].strip("/"),
+                            group_name=clean_grp_name,
                             group_url=g_url,
                             requires_joining=False,
                             is_accessible=True,
@@ -165,7 +167,7 @@ class ScraperEngine:
         return posts, group_records
 
     async def _extract_posts_from_feed(
-        self, page: Page, manifest: TaskManifest
+        self, page: Page, manifest: TaskManifest, group_name: Optional[str] = None
     ) -> List[PostPayload]:
         matched_posts: List[PostPayload] = []
         max_scrolls = min(manifest.target.max_scrolls or 5, 5)
@@ -176,7 +178,7 @@ class ScraperEngine:
             for article in articles:
                 try:
                     html = await article.inner_html()
-                    post = self.dom_extractor.extract_from_html(html)
+                    post = self.dom_extractor.extract_from_html(html, group_name=group_name)
 
                     # Check criteria & duplicate prevention
                     if post.content_text and not any(p.content_text == post.content_text for p in matched_posts):

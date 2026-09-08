@@ -16,10 +16,25 @@ class DOMExtractor:
 
         # 1. Author extraction
         author = "Unknown Author"
-        author_container = soup.find(class_=re.compile(r"author|user", re.IGNORECASE))
-        if author_container:
-            author = author_container.get_text(strip=True)
-        else:
+        # Check standard headings and strong tags in post header
+        h_tag = soup.find(["h2", "h3", "h4", "strong"])
+        if h_tag and h_tag.get_text(strip=True):
+            candidate = h_tag.get_text(strip=True)
+            if len(candidate) < 60 and not candidate.startswith("http"):
+                author = candidate
+
+        if author == "Unknown Author":
+            author_container = soup.find(class_=re.compile(r"author|user|actor", re.IGNORECASE))
+            if author_container:
+                author = author_container.get_text(strip=True)
+
+        if author == "Unknown Author":
+            # Fallback to profile link text
+            prof_link = soup.find("a", href=re.compile(r"user/|profile\.php|/groups/[^/]+/user/"))
+            if prof_link and prof_link.get_text(strip=True):
+                author = prof_link.get_text(strip=True)
+
+        if author == "Unknown Author":
             # Fallback to article aria-label
             article = soup.find(attrs={"role": "article"})
             if article and article.get("aria-label"):
