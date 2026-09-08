@@ -20,6 +20,10 @@ class GroupScanner:
         soup = BeautifulSoup(html_snippet, "html.parser")
         text = soup.get_text(separator=" ", strip=True).lower()
 
+        # Explicit public indicators
+        if "public group" in text or "קבוצה ציבורית" in text or "anyone can see who's in the group" in text:
+            return False
+
         gated_indicators = [
             "join this group to view",
             "this group is private",
@@ -33,14 +37,6 @@ class GroupScanner:
         for indicator in gated_indicators:
             if indicator in text:
                 return True
-
-        # Check for Join button presence without feed
-        join_btn = soup.find(attrs={"aria-label": re.compile(r"join group|הצטרף", re.IGNORECASE)})
-        feed = soup.find(attrs={"role": "feed"})
-        articles = soup.find_all(attrs={"role": "article"})
-
-        if join_btn and not feed and len(articles) == 0:
-            return True
 
         return False
 

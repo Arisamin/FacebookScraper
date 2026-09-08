@@ -74,34 +74,52 @@ class ScraperEngine:
         group_records: List[GroupRecord] = []
 
         target = manifest.target
+        is_direct_url = target.url_or_query.startswith("http://") or target.url_or_query.startswith("https://")
 
-        # 1. Navigation
-        if target.type == TargetType.GROUP or target.type == TargetType.PAGE:
+        # 1. Navigation for Direct URL
+        if is_direct_url:
             url = target.url_or_query
+            logger.info(f"Navigating directly to target URL: {url}")
             await page.goto(url, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
             content = await page.content()
 
             # Check if gated
             if self.group_scanner.check_is_gated(content):
+                logger.info(f"Target URL is gated/private: {url}")
                 if manifest.privacy_handling.record_gated_groups:
                     group_records.append(
                         self.group_scanner.create_gated_record(
-                            group_name=target.url_or_query,
-                            group_url=target.url_or_query,
+                            group_name=target.url_or_query.split("/groups/")[-1].strip("/"),
+                            group_url=url,
                         )
                     )
                 return posts, group_records
 
-            extracted_posts = await self._extract_posts_from_feed(page, manifest)
+            grp_title = await page.title()
+            clean_grp_name = grp_title.replace("| Facebook", "").replace("- Facebook", "").strip() or url.split("/groups/")[-1].strip("/")
+            extracted_posts = await self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
+            logger.info(f"Extracted {len(extracted_posts)} posts directly from URL: {url}")
             posts.extend(extracted_posts)
+            group_records.append(
+                GroupRecord(
+                    group_name=clean_grp_name,
+                    group_url=url,
+                    requires_joining=False,
+                    is_accessible=True,
+                    posts_scanned=len(extracted_posts),
+                    matched_posts_count=len(extracted_posts),
+                )
+            )
 
-        elif target.type == TargetType.GROUP_SEARCH:
-            # 1. Search for groups
+        else:
+            # Query-based search for groups
             import urllib.parse
             encoded_q = urllib.parse.quote_plus(target.url_or_query)
             search_url = f"https://www.facebook.com/search/groups/?q={encoded_q}"
+            logger.info(f"Navigating to group search URL: {search_url}")
             await page.goto(search_url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(3500)
 
             # 2. Extract group links from search results
             group_links = []
@@ -120,7 +138,6 @@ class ScraperEngine:
                 clean_url = href.split("?")[0].rstrip("/")
 
                 # Filter out generic Facebook navigation URLs
-                # Valid group URLs have an identifier after /groups/, e.g., /groups/12345 or /groups/pythondevs
                 parts = clean_url.split("/groups/")
                 if len(parts) < 2:
                     continue
@@ -137,7 +154,7 @@ class ScraperEngine:
                     break
 
             if not group_links:
-                # If no direct group search cards found, record search record
+                logger.warning(f"No direct group links found in search for query '{target.url_or_query}'")
                 group_records.append(
                     GroupRecord(
                         group_name=f"Search: {target.url_or_query}",
@@ -150,11 +167,13 @@ class ScraperEngine:
             # 3. Visit discovered group(s) and extract posts
             for g_url in group_links:
                 try:
+                    logger.info(f"Visiting discovered group: {g_url}")
                     await page.goto(g_url, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(2500)
+                    await page.wait_for_timeout(3000)
                     content = await page.content()
 
                     if self.group_scanner.check_is_gated(content):
+                        logger.info(f"Group is private/gated: {g_url}")
                         if manifest.privacy_handling.record_gated_groups:
                             group_records.append(
                                 self.group_scanner.create_gated_record(
@@ -168,6 +187,7 @@ class ScraperEngine:
                     grp_title = await page.title()
                     clean_grp_name = grp_title.replace("| Facebook", "").replace("- Facebook", "").strip() or g_url.split("/groups/")[-1].strip("/")
                     g_posts = await self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
+                    logger.info(f"Extracted {len(g_posts)} matched posts from group '{clean_grp_name}' ({g_url})")
                     posts.extend(g_posts)
                     group_records.append(
                         GroupRecord(
@@ -194,6 +214,7 @@ class ScraperEngine:
 
         for scroll_idx in range(max_scrolls):
             articles = await page.query_selector_all('div[role="article"], div[data-pagelet*="FeedUnit"]')
+            logger.info(f"Feed scroll {scroll_idx + 1}/{max_scrolls}: detected {len(articles)} article DOM nodes.")
 
             for article in articles:
                 try:
@@ -216,6 +237,6 @@ class ScraperEngine:
 
             # Scroll down to trigger infinite feed loading
             await page.evaluate("window.scrollBy(0, 1200)")
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(1800)
 
         return matched_posts
