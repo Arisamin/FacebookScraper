@@ -44,7 +44,7 @@
         "url": "http://127.0.0.1:8000/scrape",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"manifest\": {{ $json }},\n  \"headless\": {{ $('2. Input Normalizer').item.json.headless }}\n}"
+        "jsonBody": "={{ JSON.stringify({\n  manifest: $json,\n  headless: $('2. Input Normalizer').item.json.headless !== undefined ? $('2. Input Normalizer').item.json.headless : true\n}) }}"
       },
       "id": "node-4-playwright-scraper",
       "name": "4. Playwright Scraper Engine",
@@ -96,7 +96,7 @@
         "url": "http://127.0.0.1:8000/synthesize",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"posts\": {{ $('4. Playwright Scraper Engine').item.json.posts || [] }},\n  \"group_records\": {{ $('4. Playwright Scraper Engine').item.json.group_records || [] }},\n  \"format\": \"{{ $('3. AI Task Compiler Node').item.json.output_config.format }}\",\n  \"columns\": {{ $('3. AI Task Compiler Node').item.json.output_config.columns || '[]' }}\n}"
+        "jsonBody": "={{ JSON.stringify({\n  posts: $('4. Playwright Scraper Engine').item.json.posts || [],\n  group_records: $('4. Playwright Scraper Engine').item.json.group_records || [],\n  format: $('3. AI Task Compiler Node').item.json.output_config?.format || 'markdown_table',\n  columns: $('3. AI Task Compiler Node').item.json.output_config?.columns || []\n}) }}"
       },
       "id": "node-7-output-synthesizer",
       "name": "7. Output Synthesizer",
@@ -107,7 +107,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"status\": \"{{ $json.obstacle_detected ? 'obstacle_encountered' : 'success' }}\",\n  \"task_id\": \"{{ $('3. AI Task Compiler Node').item.json.task_id }}\",\n  \"posts_scraped\": {{ $('4. Playwright Scraper Engine').item.json.posts_count || 0 }},\n  \"result\": {{ $json.formatted_output ? JSON.stringify($json.formatted_output) : JSON.stringify($json.diagnostic) }}\n}"
+        "responseBody": "={{ JSON.stringify({\n  status: $json.obstacle_detected ? 'obstacle_encountered' : 'success',\n  task_id: $('3. AI Task Compiler Node').item.json.task_id,\n  posts_scraped: $('4. Playwright Scraper Engine').item.json.posts_count || 0,\n  result: $json.formatted_output !== undefined ? $json.formatted_output : $json.diagnostic\n}) }}"
       },
       "id": "node-8-return-response",
       "name": "8. Return Response",

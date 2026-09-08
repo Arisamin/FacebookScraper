@@ -181,35 +181,56 @@ The Task Compiler translates free-form natural language instructions into a stri
 
 ## 5. Execution Model: n8n Workflow & FastAPI Bridge Architecture
 
-To decouple complex browser automation and AI SDK dependencies from n8n's workflow engine, the system uses a **FastAPI Microservice Bridge** pattern:
+To decouple complex browser automation and AI SDK dependencies from n8n's workflow engine, the system uses a **FastAPI Microservice Bridge** pattern.
+
+### Comprehensive Component & Communication Block Diagram
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                  N8N ORCHESTRATION CANVAS                              │
-│                                                                                        │
-│  [1. Webhook] ──► [2. Normalizer] ──► [3. AI Compiler] ──► [4. Playwright Scraper]   │
-│                                                                      │                 │
-│  [8. Return] ◄── [7. Formatter]   ◄── [5. Obstacle Check] ◄──────────┘                 │
-│         ▲                                    │                                         │
-│         └─────── [6. Vision Diagnostic] ◄────┘ (0 posts / login wall)                  │
-└───────────────────────────┬──────────────────────────────────┬─────────────────────────┘
-                            │                                  │
-                  HTTP POST │ /compile               HTTP POST │ /scrape
-                            ▼                                  ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                       FASTAPI BRIDGE MICROSERVICE (src/n8n_bridge/)                    │
-│                                                                                        │
-│  • Endpoint /compile ────────► Calls Google Gemini API (gemini-2.0-flash via REST)     │
-│                                 Translates prompt ➔ TaskManifest JSON                  │
-│                                                                                        │
-│  • Endpoint /scrape ─────────► Launches Playwright Chromium Engine (async)             │
-│                                 Navigates Facebook, extracts DOM, applies filters      │
-│                                                                                        │
-│  • Endpoint /solve-obstacle ─► Calls Google Gemini Vision API (b64 cropped screenshot) │
-│                                 Detects coordinate offsets for self-healing clicks     │
-│                                                                                        │
-│  • Endpoint /synthesize ─────► Executes formatters (Markdown, CSV, Mermaid, JSON)      │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           N8N ORCHESTRATION CANVAS (BOX 1)                                       │
+│                                                                                                                  │
+│   ┌───────────────────────────────┐               ┌───────────────────────────────┐                              │
+│   │ Node 1: User Input Trigger    │──────────────►│ Node 2: Input Normalizer      │                              │
+│   │ (n8n Webhook Node)            │  In-Memory JS │ (n8n Code Node)               │                              │
+│   └───────────────────────────────┘   Data Event  └───────────────────────────────┘                              │
+│                  ▲                                                │                                              │
+│                  │                                                │ In-Memory JS                                 │
+│                  │ HTTP 200 JSON                                  ▼ Data Event                                   │
+│                  │ (Final Output)                 ┌───────────────────────────────┐                              │
+│   ┌───────────────────────────────┐               │ Node 3: AI Task Compiler      │                              │
+│   │ Node 8: Return Response       │◄──────────────│ (n8n HTTP Request Node)       │                              │
+│   │ (n8n Respond to Webhook Node) │               └───────────────────────────────┘                              │
+│   └───────────────────────────────┘                               │                                              │
+│         ▲                    ▲                                    │ HTTP POST /compile                           │
+│         │                    │                                    ▼                                              │
+│         │ In-Memory JS       │ In-Memory JS       ┌──────────────────────────────────────────────────────────┐   │
+│         │ Data Event         │ Data Event         │ FASTAPI BRIDGE BACKEND (BOX 2) (src/n8n_bridge/server.py)│   │
+│   ┌─────────────┐      ┌─────────────┐            │                                                          │   │
+│   │ Node 6: AI  │      │ Node 7:     │            │ ┌──────────────────────────────────────────────────────┐ │   │
+│   │ Obstacle    │      │ Output      │            │ │ Google Gemini 2.0 Flash REST API                     │ │   │
+│   │ Diagnostic  │      │ Synthesizer │            │ │ (https://generativelanguage.googleapis.com)          │ │   │
+│   │ (Code Node) │      │ (HTTP Node) │            │ │ • Protocol: HTTPS POST (GEMINI_API_KEY)              │ │   │
+│   └─────────────┘      └─────────────┘            │ │ • Payload: SYSTEM_COMPILER_PROMPT + User Prompt      │ │   │
+│         ▲                    ▲                    │ │ • Response: Structured TaskManifest JSON             │ │   │
+│         │ True (0 posts)     │ False (>0 posts)   │ └──────────────────────────────────────────────────────┘ │   │
+│   ┌───────────────────────────────┐               │                          ▲                               │   │
+│   │ Node 5: UI Obstacle Check     │               │                          │ HTTPS REST                    │   │
+│   │ (n8n If Condition Node)       │               │                          ▼                               │   │
+│   └───────────────────────────────┘               │ ┌──────────────────────────────────────────────────────┐ │   │
+│                  ▲                                │ │ Playwright Chromium Stealth Engine                   │ │   │
+│                  │ In-Memory JS Data              │ │ • Protocol: Async CDP (Chrome DevTools Protocol)     │ │   │
+│   ┌───────────────────────────────┐               │ │ • Session: session_storage.json storage state        │ │   │
+│   │ Node 4: Playwright Scraper    │──────────────►│ │ • Output: Accessibility Trees & Extracted DOM HTML   │ │   │
+│   │ (n8n HTTP Request Node)       │   HTTP POST   │ └──────────────────────────────────────────────────────┘ │   │
+│   └───────────────────────────────┘   /scrape     │                          │                               │   │
+│                                                   │                          ▼                               │   │
+│                                                   │ ┌──────────────────────────────────────────────────────┐ │   │
+│                                                   │ │ Output Synthesizer & Formatters                      │ │   │
+│                                                   │ │ • Protocol: In-Memory Python Serializer              │ │   │
+│                                                   │ │ • Formats: Markdown Table, CSV, JSON, Mermaid        │ │   │
+│                                                   │ └──────────────────────────────────────────────────────┘ │   │
+│                                                   └──────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### How the AI Model (Google Gemini) is Contacted in the Flow:
