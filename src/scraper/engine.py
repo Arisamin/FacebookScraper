@@ -73,6 +73,24 @@ class ScraperEngine:
         posts: List[PostPayload] = []
         group_records: List[GroupRecord] = []
 
+        # 0. Proactively verify session authentication status
+        await page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+        await page.wait_for_timeout(2000)
+        pwd_input = await page.query_selector('input[type="password"], input[name="pass"], form[action*="login"]')
+        continue_login_btn = await page.query_selector('div[role="button"]:has-text("המשך"), div[role="button"]:has-text("Continue"), div[aria-label*="Ariel Sam"]')
+        
+        if pwd_input or (continue_login_btn and "search" not in page.url):
+            logger.warning("Facebook session has expired or requires password re-entry on live Facebook.")
+            group_records.append(
+                GroupRecord(
+                    group_name="Authentication Required",
+                    group_url="https://www.facebook.com/login",
+                    requires_joining=True,
+                    is_accessible=False,
+                )
+            )
+            return posts, group_records
+
         target = manifest.target
         is_direct_url = target.url_or_query.startswith("http://") or target.url_or_query.startswith("https://")
 
