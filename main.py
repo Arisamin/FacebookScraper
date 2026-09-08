@@ -46,10 +46,14 @@ def main():
     parser.add_argument("--server", action="store_true", help="Launch FastAPI server for n8n")
     parser.add_argument("--port", type=int, default=8000, help="Port for server")
     parser.add_argument("--headful", action="store_true", help="Run browser in headful mode")
+    parser.add_argument("--login", action="store_true", help="Open interactive browser to capture Facebook login session")
 
     args = parser.parse_args()
 
-    if args.server:
+    if args.login:
+        from login import capture_session
+        asyncio.run(capture_session())
+    elif args.server:
         print(f"Starting FacebookScraper n8n Bridge Server on port {args.port}...")
         uvicorn.run(app, host="0.0.0.0", port=args.port)
     elif args.prompt:
