@@ -96,19 +96,71 @@ class ScraperEngine:
             posts.extend(extracted_posts)
 
         elif target.type == TargetType.GROUP_SEARCH:
-            # Search query URL
-            search_url = f"https://www.facebook.com/search/groups/?q={target.url_or_query}"
+            # 1. Search for groups
+            import urllib.parse
+            encoded_q = urllib.parse.quote_plus(target.url_or_query)
+            search_url = f"https://www.facebook.com/search/groups/?q={encoded_q}"
             await page.goto(search_url, wait_until="domcontentloaded")
-            content = await page.content()
-            # In group search mode, we would scan search results
-            group_records.append(
-                GroupRecord(
-                    group_name=f"Search: {target.url_or_query}",
-                    group_url=search_url,
-                    requires_joining=False,
-                    is_accessible=True,
+            await page.wait_for_timeout(3000)
+
+            # 2. Extract group links from search results
+            group_links = []
+            anchor_elements = await page.query_selector_all('a[href*="/groups/"]')
+            for a in anchor_elements:
+                href = await a.get_attribute("href")
+                if href and "/groups/" in href and not "/search/" in href:
+                    # Clean URL to standard group base URL
+                    clean_url = href.split("?")[0]
+                    if clean_url not in group_links:
+                        group_links.append(clean_url)
+                if len(group_links) >= 3:
+                    break
+
+            if not group_links:
+                # If no direct group search cards found, record search record
+                group_records.append(
+                    GroupRecord(
+                        group_name=f"Search: {target.url_or_query}",
+                        group_url=search_url,
+                        requires_joining=False,
+                        is_accessible=True,
+                    )
                 )
-            )
+
+            # 3. Visit discovered group(s) and extract posts
+            for g_url in group_links:
+                try:
+                    await page.goto(g_url, wait_until="domcontentloaded")
+                    await page.wait_for_timeout(2500)
+                    content = await page.content()
+
+                    if self.group_scanner.check_is_gated(content):
+                        if manifest.privacy_handling.record_gated_groups:
+                            group_records.append(
+                                self.group_scanner.create_gated_record(
+                                    group_name=g_url.split("/groups/")[-1].strip("/"),
+                                    group_url=g_url,
+                                )
+                            )
+                        continue
+
+                    # Extract posts from this group
+                    g_posts = await self._extract_posts_from_feed(page, manifest)
+                    posts.extend(g_posts)
+                    group_records.append(
+                        GroupRecord(
+                            group_name=g_url.split("/groups/")[-1].strip("/"),
+                            group_url=g_url,
+                            requires_joining=False,
+                            is_accessible=True,
+                            posts_scanned=len(g_posts),
+                            matched_posts_count=len(g_posts),
+                        )
+                    )
+                    if len(posts) >= manifest.target.max_posts_to_scan:
+                        break
+                except Exception as e:
+                    logger.warning(f"Error scanning group {g_url}: {e}")
 
         return posts, group_records
 
@@ -116,22 +168,32 @@ class ScraperEngine:
         self, page: Page, manifest: TaskManifest
     ) -> List[PostPayload]:
         matched_posts: List[PostPayload] = []
-        articles = await page.query_selector_all('div[role="article"]')
+        max_scrolls = min(manifest.target.max_scrolls or 5, 5)
 
-        for article in articles:
-            html = await article.inner_html()
-            post = self.dom_extractor.extract_from_html(html)
+        for scroll_idx in range(max_scrolls):
+            articles = await page.query_selector_all('div[role="article"], div[data-pagelet*="FeedUnit"]')
 
-            # Check criteria
-            if self.group_scanner.matches_criteria(post, manifest.criteria):
-                # Apply word snippet truncation
-                if manifest.output_config.snippet_max_words:
-                    post.snippet = self.dom_extractor.generate_snippet(
-                        post.content_text, manifest.output_config.snippet_max_words
-                    )
-                matched_posts.append(post)
+            for article in articles:
+                try:
+                    html = await article.inner_html()
+                    post = self.dom_extractor.extract_from_html(html)
 
-            if len(matched_posts) >= manifest.target.max_posts_to_scan:
-                break
+                    # Check criteria & duplicate prevention
+                    if post.content_text and not any(p.content_text == post.content_text for p in matched_posts):
+                        if self.group_scanner.matches_criteria(post, manifest.criteria):
+                            if manifest.output_config.snippet_max_words:
+                                post.snippet = self.dom_extractor.generate_snippet(
+                                    post.content_text, manifest.output_config.snippet_max_words
+                                )
+                            matched_posts.append(post)
+
+                    if len(matched_posts) >= manifest.target.max_posts_to_scan:
+                        return matched_posts
+                except Exception:
+                    continue
+
+            # Scroll down to trigger infinite feed loading
+            await page.evaluate("window.scrollBy(0, 1200)")
+            await page.wait_for_timeout(1500)
 
         return matched_posts
