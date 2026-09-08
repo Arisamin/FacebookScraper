@@ -135,12 +135,16 @@
     },
     {
       "parameters": {
-        "jsCode": "// Obstacle diagnostic\nconst input = $input.first().json;\nconst postsCount = input.posts_count || 0;\nconst groups = input.group_records || [];\nconst gatedCount = groups.filter(g => g.requires_joining).length;\nconst totalGroupsScanned = groups.length;\n\nlet statusMsg = '';\nif (gatedCount > 0 && gatedCount === totalGroupsScanned) {\n  statusMsg = `All ${totalGroupsScanned} discovered group(s) are private/gated and require membership approval.`;\n} else if (totalGroupsScanned === 0) {\n  statusMsg = 'No matching groups or posts were found for this search query.';\n} else {\n  statusMsg = `Scanned ${totalGroupsScanned} group(s), but 0 posts matched the specified keyword/timeframe criteria.`;\n}\n\nreturn [{\n  json: {\n    obstacle_detected: true,\n    diagnostic: statusMsg,\n    posts: [],\n    group_records: groups,\n    requires_human_session: false\n  }\n}];"
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/diagnose",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  manifest: $('3. AI Task Compiler Node').item.json,\n  posts: $('6. Playwright Scraper Engine').item.json.posts || [],\n  group_records: $('6. Playwright Scraper Engine').item.json.group_records || [],\n  original_prompt: $('2. Input Normalizer').item.json.prompt || '',\n  error_message: $('6. Playwright Scraper Engine').item.json.error || ''\n}) }}"
       },
       "id": "node-8a-ai-vision-recovery",
       "name": "8a. AI Obstacle Diagnostic",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [1800, 180]
     },
     {
