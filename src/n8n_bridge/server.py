@@ -1,5 +1,8 @@
 """n8n Bridge Server: REST API endpoints for seamless n8n webhook and AI agent integration."""
 
+import os
+import logging
+from logging.handlers import RotatingFileHandler
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -9,6 +12,28 @@ from src.models.post import PostPayload, GroupRecord
 from src.compiler.task_compiler import TaskCompiler
 from src.scraper.engine import ScraperEngine
 from src.synthesizer.formatters import OutputSynthesizer
+
+# Ensure logs directory exists
+LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(LOGS_DIR, "scraper.log")
+
+# Configure root logger to output to both console and logs/scraper.log
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Formatter
+log_formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+# File Handler (5 MB max, 3 backups)
+if not any(isinstance(h, RotatingFileHandler) for h in root_logger.handlers):
+    file_handler = RotatingFileHandler(LOG_FILE_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    file_handler.setFormatter(log_formatter)
+    file_handler.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+
+logger = logging.getLogger("BridgeServer")
+logger.info(f"Logging initialized. Log file: {LOG_FILE_PATH}")
 
 app = FastAPI(
     title="Facebook Scraper n8n Bridge API",
@@ -60,6 +85,24 @@ class LoginRequest(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "FacebookScraper Bridge"}
+
+
+@app.get("/logs")
+def get_logs(lines: int = 100):
+    """Retrieve recent application log lines for troubleshooting and diagnostics."""
+    if not os.path.exists(LOG_FILE_PATH):
+        return {"logs": [], "total_lines": 0}
+    try:
+        with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:] if len(all_lines) > lines else all_lines
+            return {
+                "logs": [l.strip() for l in recent_lines],
+                "total_lines": len(all_lines),
+                "log_file": LOG_FILE_PATH,
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/session/status")

@@ -108,11 +108,31 @@ class ScraperEngine:
             anchor_elements = await page.query_selector_all('a[href*="/groups/"]')
             for a in anchor_elements:
                 href = await a.get_attribute("href")
-                if href and "/groups/" in href and not "/search/" in href:
-                    # Clean URL to standard group base URL
-                    clean_url = href.split("?")[0]
-                    if clean_url not in group_links:
-                        group_links.append(clean_url)
+                if not href:
+                    continue
+                # Normalize relative URLs
+                if href.startswith("/"):
+                    href = f"https://www.facebook.com{href}"
+                elif not href.startswith("http"):
+                    href = f"https://www.facebook.com/{href.lstrip('/')}"
+
+                # Clean URL of query parameters
+                clean_url = href.split("?")[0].rstrip("/")
+
+                # Filter out generic Facebook navigation URLs
+                # Valid group URLs have an identifier after /groups/, e.g., /groups/12345 or /groups/pythondevs
+                parts = clean_url.split("/groups/")
+                if len(parts) < 2:
+                    continue
+                group_id_slug = parts[1].split("/")[0].strip()
+                if not group_id_slug or group_id_slug.lower() in ("feed", "discover", "joins", "create", "notifications", "search"):
+                    continue
+
+                canonical_group_url = f"https://www.facebook.com/groups/{group_id_slug}"
+                if canonical_group_url not in group_links:
+                    logger.info(f"Discovered group from search: {canonical_group_url}")
+                    group_links.append(canonical_group_url)
+
                 if len(group_links) >= 3:
                     break
 
