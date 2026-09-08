@@ -181,67 +181,79 @@ The Task Compiler translates free-form natural language instructions into a stri
 
 ## 5. Execution Model: n8n Workflow & FastAPI Bridge Architecture
 
-To decouple complex browser automation and AI SDK dependencies from n8n's workflow engine, the system uses a **FastAPI Microservice Bridge** pattern.
+To decouple complex browser automation and AI SDK dependencies from n8n's workflow engine, the system uses a **FastAPI Microservice Bridge** pattern with a **Universal AI Output Synthesizer**.
 
 ### Comprehensive Component & Communication Block Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                           N8N ORCHESTRATION CANVAS (BOX 1)                                       │
-│                                                                                                                  │
-│   ┌───────────────────────────────┐               ┌───────────────────────────────┐                              │
-│   │ Node 1: User Input Trigger    │──────────────►│ Node 2: Input Normalizer      │                              │
-│   │ (n8n Webhook Node)            │  In-Memory JS │ (n8n Code Node)               │                              │
-│   └───────────────────────────────┘   Data Event  └───────────────────────────────┘                              │
-│                  ▲                                                │                                              │
-│                  │                                                │ In-Memory JS                                 │
-│                  │ HTTP 200 JSON                                  ▼ Data Event                                   │
-│                  │ (Final Output)                 ┌───────────────────────────────┐                              │
-│   ┌───────────────────────────────┐               │ Node 3: AI Task Compiler      │                              │
-│   │ Node 8: Return Response       │◄──────────────│ (n8n HTTP Request Node)       │                              │
-│   │ (n8n Respond to Webhook Node) │               └───────────────────────────────┘                              │
-│   └───────────────────────────────┘                               │                                              │
-│         ▲                    ▲                                    │ HTTP POST /compile                           │
-│         │                    │                                    ▼                                              │
-│         │ In-Memory JS       │ In-Memory JS       ┌──────────────────────────────────────────────────────────┐   │
-│         │ Data Event         │ Data Event         │ FASTAPI BRIDGE BACKEND (BOX 2) (src/n8n_bridge/server.py)│   │
-│   ┌─────────────┐      ┌─────────────┐            │                                                          │   │
-│   │ Node 6: AI  │      │ Node 7:     │            │ ┌──────────────────────────────────────────────────────┐ │   │
-│   │ Obstacle    │      │ Output      │            │ │ Google Gemini 2.0 Flash REST API                     │ │   │
-│   │ Diagnostic  │      │ Synthesizer │            │ │ (https://generativelanguage.googleapis.com)          │ │   │
-│   │ (Code Node) │      │ (HTTP Node) │            │ │ • Protocol: HTTPS POST (GEMINI_API_KEY)              │ │   │
-│   └─────────────┘      └─────────────┘            │ │ • Payload: SYSTEM_COMPILER_PROMPT + User Prompt      │ │   │
-│         ▲                    ▲                    │ │ • Response: Structured TaskManifest JSON             │ │   │
-│         │ True (0 posts)     │ False (>0 posts)   │ └──────────────────────────────────────────────────────┘ │   │
-│   ┌───────────────────────────────┐               │                          ▲                               │   │
-│   │ Node 5: UI Obstacle Check     │               │                          │ HTTPS REST                    │   │
-│   │ (n8n If Condition Node)       │               │                          ▼                               │   │
-│   └───────────────────────────────┘               │ ┌──────────────────────────────────────────────────────┐ │   │
-│                  ▲                                │ │ Playwright Chromium Stealth Engine                   │ │   │
-│                  │ In-Memory JS Data              │ │ • Protocol: Async CDP (Chrome DevTools Protocol)     │ │   │
-│   ┌───────────────────────────────┐               │ │ • Session: session_storage.json storage state        │ │   │
-│   │ Node 4: Playwright Scraper    │──────────────►│ │ • Output: Accessibility Trees & Extracted DOM HTML   │ │   │
-│   │ (n8n HTTP Request Node)       │   HTTP POST   │ └──────────────────────────────────────────────────────┘ │   │
-│   └───────────────────────────────┘   /scrape     │                          │                               │   │
-│                                                   │                          ▼                               │   │
-│                                                   │ ┌──────────────────────────────────────────────────────┐ │   │
-│                                                   │ │ Output Synthesizer & Formatters                      │ │   │
-│                                                   │ │ • Protocol: In-Memory Python Serializer              │ │   │
-│                                                   │ │ • Formats: Markdown Table, CSV, JSON, Mermaid        │ │   │
-│                                                   │ └──────────────────────────────────────────────────────┘ │   │
-│                                                   └──────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              N8N ORCHESTRATION CANVAS (BOX 1)                                              │
+│                                                                                                                            │
+│   ┌───────────────────────────────┐               ┌───────────────────────────────┐                                        │
+│   │ Node 1: User Input Trigger    │──────────────►│ Node 2: Input Normalizer      │                                        │
+│   │ (n8n Webhook Node)            │  In-Memory JS │ (n8n Code Node)               │                                        │
+│   └───────────────────────────────┘   Data Event  └───────────────────────────────┘                                        │
+│                  ▲                                                │                                                        │
+│                  │                                                │ In-Memory JS                                           │
+│                  │ HTTP 200 JSON                                  ▼ Data Event                                             │
+│                  │ (Final Output)                 ┌───────────────────────────────┐                                        │
+│   ┌───────────────────────────────┐               │ Node 3: AI Task Compiler      │                                        │
+│   │ Node 9: Return Response       │               │ (n8n HTTP Request Node)       │                                        │
+│   │ (n8n Respond to Webhook Node) │               └───────────────────────────────┘                                        │
+│   └───────────────────────────────┘                               │                                                        │
+│         ▲                    ▲                                    │ HTTP POST /compile                                     │
+│         │                    │                                    ▼                                                        │
+│         │ In-Memory JS       │ In-Memory JS       ┌────────────────────────────────────────────────────────────────────┐   │
+│         │ Data Event         │ Data Event         │ FASTAPI BRIDGE BACKEND (BOX 2) (src/n8n_bridge/server.py)          │   │
+│   ┌─────────────┐      ┌─────────────┐            │                                                                    │   │
+│   │ Node 8a: AI │      │ Node 8b:    │            │ ┌────────────────────────────────────────────────────────────────┐ │   │
+│   │ Obstacle    │      │ Universal AI│            │ │ Google Gemini 2.5 Flash REST API                               │ │   │
+│   │ Diagnostic  │      │ Synthesizer │            │ │ (https://generativelanguage.googleapis.com)                    │ │   │
+│   │ (Code Node) │      │ (HTTP Node) │            │ │ • Protocol: HTTPS POST (GEMINI_API_KEY)                        │ │   │
+│   └─────────────┘      └─────────────┘            │ │ • Compiler: NL Prompt -> Canonical TaskManifest JSON           │ │   │
+│         ▲                    ▲                    │ │ • Vision: DOM Obstacle coordinates & interactive solving       │ │   │
+│         │ Obstacle (0 posts) │ Success (>0 posts) │ │ • Universal Synthesizer: Arbitrary Output (HTML, XML, YAML...) │ │   │
+│   ┌───────────────────────────────┐               │ └────────────────────────────────────────────────────────────────┘ │   │
+│   │ Node 7: Scrape Result Router  │               │                          ▲                                         │   │
+│   │ (n8n If Condition Node)       │               │                          │ HTTPS REST                              │   │
+│   └───────────────────────────────┘               │                          ▼                                         │   │
+│                  ▲                                │ ┌────────────────────────────────────────────────────────────────┐ │   │
+│                  │ In-Memory JS Data              │ │ Playwright Chromium Stealth Engine                             │ │   │
+│   ┌───────────────────────────────┐               │ │ • Protocol: Async CDP (Chrome DevTools Protocol)               │ │   │
+│   │ Node 6: Playwright Scraper    │──────────────►│ │ • Session: session_storage.json cookie state                   │ │   │
+│   │ (n8n HTTP Request Node)       │   HTTP POST   │ │ • Extraction: Accessibility Trees & Clean DOM Post Models      │ │   │
+│   └───────────────────────────────┘   /scrape     │ └────────────────────────────────────────────────────────────────┘ │   │
+│                  ▲                                │                          │                                         │   │
+│                  │ Authenticated                  │                          ▼                                         │   │
+│   ┌───────────────────────────────┐               │ ┌────────────────────────────────────────────────────────────────┐ │   │
+│   │ Node 5: Is Authenticated?     │               │ │ Universal Output Synthesizer Engine                            │ │   │
+│   │ (n8n If Node / Login Branch)  │               │ │ • High-speed Deterministic: CSV, Markdown, HTML Table, JSON    │ │   │
+│   └───────────────────────────────┘               │ │ • Dynamic AI Synthesizer: XML, YAML, LaTeX, Custom Formats     │ │   │
+│                  ▲                                │ └────────────────────────────────────────────────────────────────┘ │   │
+│                  │ HTTP GET /session/status       │                                                                    │   │
+│   ┌───────────────────────────────┐               │                                                                    │   │
+│   │ Node 4: Check Session Status  │──────────────►│                                                                    │   │
+│   │ (n8n HTTP Request Node)       │               │                                                                    │   │
+│   └───────────────────────────────┘               └────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Universal AI Output Synthesizer Architecture:
+Instead of requiring pre-configured formats in advance, the pipeline features a **Hybrid Synthesis Engine**:
+1. **Deterministic Fast-Paths**: Standard formats (CSV, Markdown Tables, HTML Tables, JSON, Mermaid diagrams) are rendered directly in-process for millisecond response times.
+2. **AI-Driven Dynamic Formatting**: When a user requests arbitrary or specialized formats (e.g., XML schemas, YAML configs, LaTeX documents, custom HTML templates, executive summaries, bullet points), the structured `PostPayload` objects and user instructions are routed to **Google Gemini 2.5 Flash**, synthesizing the exact requested format on the fly without workflow modifications.
+
 ### How the AI Model (Google Gemini) is Contacted in the Flow:
-1. **Credentials**: The FastAPI bridge loads `GEMINI_API_KEY` from `.env` on startup.
+1. **Credentials**: The FastAPI bridge loads `GEMINI_API_KEY` and `GEMINI_MODEL=gemini-2.5-flash` from `.env` on startup.
 2. **Task Compilation (`/compile`)**:
    - `TaskCompiler` (`src/compiler/task_compiler.py`) formats the user's prompt alongside `SYSTEM_COMPILER_PROMPT`.
-   - Sends a REST request to `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}`.
+   - Sends a REST request to `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}`.
    - Gemini returns structured JSON matching `TaskManifest`.
 3. **Obstacle Solving (`/solve-obstacle`)**:
    - When Playwright encounters interactive obstacles (popups, "See more" buttons, login prompts), it captures a base64 screenshot crop.
    - `VisionFallbackHandler` (`src/scraper/vision_fallback.py`) calls Gemini Vision with `inline_data` to locate target click coordinates.
+4. **Universal Output Synthesis (`/synthesize`)**:
+   - `OutputSynthesizer` (`src/synthesizer/formatters.py`) dynamically routes custom/complex format requests to Gemini 2.5 Flash, generating clean, formatted outputs in any target dialect.
 
 ---
 
