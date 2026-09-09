@@ -114,9 +114,12 @@ def get_logs(lines: int = 100):
 
 
 @app.get("/session/status")
-def session_status():
-    """Check if an active session exists in session_storage.json."""
-    valid = scraper.session_manager.has_valid_session()
+async def session_status(live_check: bool = True):
+    """Check if an active session exists and is live/accepted on Facebook."""
+    if live_check:
+        valid = await scraper.session_manager.check_live_session()
+    else:
+        valid = scraper.session_manager.has_valid_session()
     return {
         "has_valid_session": valid,
         "storage_state_path": scraper.session_manager.storage_state_path,

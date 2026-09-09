@@ -238,10 +238,71 @@ To decouple complex browser automation and AI SDK dependencies from n8n's workfl
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Universal AI Output Synthesizer Architecture:
-Instead of requiring pre-configured formats in advance, the pipeline features a **Hybrid Synthesis Engine**:
-1. **Deterministic Fast-Paths**: Standard formats (CSV, Markdown Tables, HTML Tables, JSON, Mermaid diagrams) are rendered directly in-process for millisecond response times.
-2. **AI-Driven Dynamic Formatting**: When a user requests arbitrary or specialized formats (e.g., XML schemas, YAML configs, LaTeX documents, custom HTML templates, executive summaries, bullet points), the structured `PostPayload` objects and user instructions are routed to **Google Gemini 2.5 Flash**, synthesizing the exact requested format on the fly without workflow modifications.
+### Executive Verbal Description of the Workflow Flow (Node-by-Node)
+
+The end-to-end automation executes across 9 orchestrated nodes with automated authentication recovery and AI-driven synthesis:
+
+```
+[1. User Trigger] ──► [2. Input Normalizer] ──► [3. AI Task Compiler]
+                                                        │
+                                                        ▼
+                                            [4. Check Session Status]
+                                                        │
+                                            [5. Is Authenticated?]
+                                              ├── True ────────┐
+                                              └── False ──► [5a. Login Invocation]
+                                                               │
+                                                               ▼
+                                                  [6. Playwright Scraper Engine]
+                                                               │
+                                                  [7. UI Obstacle Check]
+                                                    ├── Success (>0) ──► [8b. Universal Synthesizer] ──► [9. Return Response]
+                                                    └── Obstacle (0) ──► [8a. AI Diagnostic]        ──► [9. Return Response]
+```
+
+1. **Node 1: User Input Trigger (`n8n-nodes-base.webhook`)**:
+   - **Role**: Entry point for external requests (via REST API, CLI, or upstream systems).
+   - **Action**: Receives a JSON payload containing the user's natural language request (e.g. `"Extract 5 posts from Python Devs group in HTML with table"`).
+
+2. **Node 2: Input Normalizer (`n8n-nodes-base.code`)**:
+   - **Role**: Request sanitization and parameter extraction.
+   - **Action**: Strips whitespace, normalizes default options (`headless: true`), and prepares clean input objects for downstream HTTP nodes.
+
+3. **Node 3: AI Task Compiler Node (`n8n-nodes-base.httpRequest`)**:
+   - **Role**: Translates natural language into structured execution parameters.
+   - **Action**: Calls FastAPI `POST /compile`. The bridge leverages Google Gemini 2.5 Flash with `SYSTEM_COMPILER_PROMPT` to generate a canonical `TaskManifest` (target query, scroll count, keyword filters, output format directives).
+
+4. **Node 4: Check Session Status (`n8n-nodes-base.httpRequest`)**:
+   - **Role**: Live authentication verification.
+   - **Action**: Calls FastAPI `GET /session/status`. Rather than merely checking if a file exists, the bridge performs an active probe against Facebook to verify that the cookies are valid and not challenged by a password prompt or login wall.
+
+5. **Node 5: Is Session Authenticated? (`n8n-nodes-base.if`)**:
+   - **Role**: Authentication branch decision.
+   - **Action**: Evaluates `has_valid_session`. If `true`, proceeds immediately to **Node 6**. If `false` (expired/missing session), routes to **Node 5a**.
+
+6. **Node 5a: Interactive Login Invocation (`n8n-nodes-base.httpRequest`)**:
+   - **Role**: Self-healing authentication recovery.
+   - **Action**: Calls FastAPI `POST /session/login`, launching a visible Chromium window. Once the user authenticates, fresh cookies (`c_user`, `xs`, `datr`, `fr`) are saved to `session_storage.json`, and the workflow automatically resumes into **Node 6**.
+
+7. **Node 6: Playwright Scraper Engine (`n8n-nodes-base.httpRequest`)**:
+   - **Role**: Core browser automation and data extraction.
+   - **Action**: Calls FastAPI `POST /scrape`. Playwright launches with anti-bot evasion arguments, navigates to the target group or group search URL, dynamically scrolls the feed, and parses article DOM elements into structured `PostPayload` objects.
+
+8. **Node 7: UI Obstacle Check (`n8n-nodes-base.if`)**:
+   - **Role**: Result routing and quality gate.
+   - **Action**: Checks `posts_count`. If `posts_count > 0`, routes to **Node 8b (Synthesizer)**. If `posts_count == 0` (empty search, private group, or expired session obstacle), routes to **Node 8a (AI Diagnostic)**.
+
+9. **Node 8a: AI Obstacle Diagnostic (`n8n-nodes-base.httpRequest`)**:
+   - **Role**: Intelligent failure and obstacle analysis.
+   - **Action**: Calls FastAPI `POST /diagnose`. Google Gemini 2.5 Flash inspects the scraping context, group records, and DOM state to return a precise, actionable explanation (e.g. notifying the user of private group gating or session challenges).
+
+10. **Node 8b: Universal AI Output Synthesizer (`n8n-nodes-base.httpRequest`)**:
+    - **Role**: Dynamic multi-format rendering.
+    - **Action**: Calls FastAPI `POST /synthesize`. Standard formats (CSV, Markdown Tables, HTML Tables, JSON) are generated in-memory via deterministic formatters; custom or complex formats (XML, YAML, LaTeX, summaries) are synthesized dynamically by Google Gemini 2.5 Flash.
+
+11. **Node 9: Return Response (`n8n-nodes-base.respondToWebhook`)**:
+    - **Role**: HTTP response delivery.
+    - **Action**: Combines the synthesized output or diagnostic into a clean response JSON and returns HTTP 200 to the initial webhook caller.
 
 ### How the AI Model (Google Gemini) is Contacted in the Flow:
 1. **Credentials**: The FastAPI bridge loads `GEMINI_API_KEY` and `GEMINI_MODEL=gemini-2.5-flash` from `.env` on startup.

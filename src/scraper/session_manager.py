@@ -25,6 +25,48 @@ class SessionManager:
         except Exception:
             return False
 
+    async def check_live_session(self) -> bool:
+        """
+        Actively probe Facebook to verify if the session cookies are still accepted
+        or if Facebook has expired them with a password prompt / login wall.
+        """
+        if not self.has_valid_session():
+            return False
+
+        from playwright.async_api import async_playwright
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=self.get_anti_detection_args(),
+                )
+                context = await browser.new_context(
+                    storage_state=self.storage_state_path,
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                )
+                page = await context.new_page()
+                try:
+                    await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=10000)
+                    await page.wait_for_timeout(2500)
+                    body_text = await page.inner_text("body")
+                    is_login_wall = (
+                        "התחברות" in body_text or
+                        "log in" in body_text.lower() or
+                        "המשך" in body_text or
+                        "continue as" in body_text.lower() or
+                        "סיסמה" in body_text or
+                        "password" in body_text.lower() or
+                        "login" in page.url or
+                        "checkpoint" in page.url
+                    )
+                    return not is_login_wall
+                finally:
+                    await context.close()
+                    await browser.close()
+        except Exception:
+            return False
+
     def load_storage_state(self) -> Optional[Dict[str, Any]]:
         """Load storage state dictionary if file exists."""
         if self.has_valid_session():
