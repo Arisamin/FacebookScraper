@@ -2,16 +2,13 @@
 
 import os
 import sys
-import asyncio
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-
+import time
 import logging
-from typing import List, Tuple, Optional, Callable
-from playwright.async_api import async_playwright, Page, BrowserContext
+import asyncio
+from typing import List, Tuple, Optional
+from playwright.sync_api import sync_playwright, Page, BrowserContext
 
-from src.models.manifest import TaskManifest, TargetType
+from src.models.manifest import TaskManifest
 from src.models.post import PostPayload, GroupRecord
 from src.scraper.session_manager import SessionManager
 from src.scraper.dom_extractor import DOMExtractor
@@ -44,46 +41,48 @@ class ScraperEngine:
     ) -> Tuple[List[PostPayload], List[GroupRecord]]:
         """
         Executes real scraping against Facebook for the given TaskManifest.
-        Returns a tuple of (matched_posts, group_records).
+        Runs sync_playwright in a worker thread to ensure complete isolation from asyncio event loop.
         """
-        posts: List[PostPayload] = []
-        group_records: List[GroupRecord] = []
-
         if page_override:
-            # Used in unit/integration tests with mocked or injected page
-            return await self._scrape_page(page_override, manifest)
+            return self._scrape_page(page_override, manifest)
 
-        async with async_playwright() as p:
-            launch_args = self.session_manager.get_anti_detection_args()
-            browser = await p.chromium.launch(headless=headless, args=launch_args)
+        def _run_scrape():
+            posts: List[PostPayload] = []
+            group_records: List[GroupRecord] = []
 
-            storage_state = self.session_manager.load_storage_state()
-            context: BrowserContext = await browser.new_context(
-                storage_state=storage_state,
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
+            with sync_playwright() as p:
+                launch_args = self.session_manager.get_anti_detection_args()
+                browser = p.chromium.launch(headless=headless, args=launch_args)
 
-            page: Page = await context.new_page()
-            try:
-                posts, group_records = await self._scrape_page(page, manifest)
-            finally:
-                await context.close()
-                await browser.close()
+                storage_state = self.session_manager.load_storage_state()
+                context: BrowserContext = browser.new_context(
+                    storage_state=storage_state,
+                    viewport={"width": 1280, "height": 800},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                )
 
-        return posts, group_records
+                page: Page = context.new_page()
+                try:
+                    posts, group_records = self._scrape_page(page, manifest)
+                finally:
+                    context.close()
+                    browser.close()
 
-    async def _scrape_page(
+            return posts, group_records
+
+        return await asyncio.to_thread(_run_scrape)
+
+    def _scrape_page(
         self, page: Page, manifest: TaskManifest
     ) -> Tuple[List[PostPayload], List[GroupRecord]]:
         posts: List[PostPayload] = []
         group_records: List[GroupRecord] = []
 
         # 0. Proactively verify session authentication status
-        await page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(2000)
-        pwd_input = await page.query_selector('input[type="password"], input[name="pass"], form[action*="login"]')
-        continue_login_btn = await page.query_selector('div[role="button"]:has-text("המשך"), div[role="button"]:has-text("Continue"), div[aria-label*="Ariel Sam"]')
+        page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+        page.wait_for_timeout(2000)
+        pwd_input = page.query_selector('input[type="password"], input[name="pass"], form[action*="login"]')
+        continue_login_btn = page.query_selector('div[role="button"]:has-text("המשך"), div[role="button"]:has-text("Continue"), div[aria-label*="Ariel Sam"]')
         
         if pwd_input or (continue_login_btn and "search" not in page.url):
             logger.warning("Facebook session has expired or requires password re-entry on live Facebook.")
@@ -104,11 +103,11 @@ class ScraperEngine:
         if is_direct_url:
             url = target.url_or_query
             logger.info(f"[search text] Direct target URL: {url}")
-            await page.goto(url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
-            content = await page.content()
+            page.goto(url, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
+            content = page.content()
 
-            grp_title = await page.title()
+            grp_title = page.title()
             clean_grp_name = grp_title.replace("| Facebook", "").replace("- Facebook", "").strip() or target.url_or_query.split("/groups/")[-1].strip("/")
 
             # Check if gated
@@ -124,7 +123,7 @@ class ScraperEngine:
                 return posts, group_records
 
             logger.info(f"[group comment] [Group: {clean_grp_name}] Relevancy/Gating: ACCESSIBLE (Public group). Scanning feed at URL: {url}")
-            extracted_posts = await self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
+            extracted_posts = self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
             logger.info(f"[group comment] [Group: {clean_grp_name}] Extracted {len(extracted_posts)} posts directly from URL: {url}")
             posts.extend(extracted_posts)
             group_records.append(
@@ -144,15 +143,15 @@ class ScraperEngine:
             encoded_q = urllib.parse.quote_plus(target.url_or_query)
             search_url = f"https://www.facebook.com/search/groups/?q={encoded_q}"
             logger.info(f"[search text] Query: '{target.url_or_query}' | Search URL: {search_url}")
-            await page.goto(search_url, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3500)
+            page.goto(search_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(3500)
 
             # 2. Extract top 10 group links & names from search results
             group_items = []  # List of (canonical_url, group_name)
             seen_urls = set()
-            anchor_elements = await page.query_selector_all('a[href*="/groups/"]')
+            anchor_elements = page.query_selector_all('a[href*="/groups/"]')
             for a in anchor_elements:
-                href = await a.get_attribute("href")
+                href = a.get_attribute("href")
                 if not href:
                     continue
                 # Normalize relative URLs
@@ -176,8 +175,8 @@ class ScraperEngine:
                 if canonical_group_url not in seen_urls:
                     seen_urls.add(canonical_group_url)
                     # Extract group display name from anchor text or aria-label
-                    raw_text = (await a.inner_text()).strip() if a else ""
-                    aria_label = await a.get_attribute("aria-label") if a else ""
+                    raw_text = (a.inner_text()).strip() if a else ""
+                    aria_label = a.get_attribute("aria-label") if a else ""
                     name_candidate = aria_label or raw_text.split("\n")[0].strip() or group_id_slug
                     group_items.append((canonical_group_url, name_candidate))
 
@@ -203,11 +202,11 @@ class ScraperEngine:
             for g_url, g_name in group_items:
                 try:
                     logger.info(f"[group comment] [Group: {g_name}] Digging into discovered group URL: {g_url}")
-                    await page.goto(g_url, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(3000)
-                    content = await page.content()
+                    page.goto(g_url, wait_until="domcontentloaded")
+                    page.wait_for_timeout(3000)
+                    content = page.content()
 
-                    grp_title = await page.title()
+                    grp_title = page.title()
                     clean_grp_name = grp_title.replace("| Facebook", "").replace("- Facebook", "").strip() or g_name or g_url.split("/groups/")[-1].strip("/")
 
                     if self.group_scanner.check_is_gated(content):
@@ -223,7 +222,7 @@ class ScraperEngine:
 
                     logger.info(f"[group comment] [Group: {clean_grp_name}] Relevancy/Gating: ACCESSIBLE (Public group). Scanning feed...")
                     # Extract posts from this group
-                    g_posts = await self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
+                    g_posts = self._extract_posts_from_feed(page, manifest, group_name=clean_grp_name)
                     logger.info(f"[group comment] [Group: {clean_grp_name}] Extracted {len(g_posts)} matched posts from group '{clean_grp_name}' ({g_url})")
                     posts.extend(g_posts)
                     group_records.append(
@@ -243,19 +242,19 @@ class ScraperEngine:
 
         return posts, group_records
 
-    async def _extract_posts_from_feed(
+    def _extract_posts_from_feed(
         self, page: Page, manifest: TaskManifest, group_name: Optional[str] = None
     ) -> List[PostPayload]:
         matched_posts: List[PostPayload] = []
         max_scrolls = min(manifest.target.max_scrolls or 5, 5)
 
         for scroll_idx in range(max_scrolls):
-            articles = await page.query_selector_all('div[role="article"], div[data-pagelet*="FeedUnit"]')
+            articles = page.query_selector_all('div[role="article"], div[data-pagelet*="FeedUnit"]')
             logger.info(f"[group comment] [Group: {group_name or 'Unknown'}] Feed scroll {scroll_idx + 1}/{max_scrolls}: detected {len(articles)} article DOM nodes.")
 
             for article in articles:
                 try:
-                    html = await article.inner_html()
+                    html = article.inner_html()
                     post = self.dom_extractor.extract_from_html(html, group_name=group_name)
 
                     if not post.content_text or len(post.content_text.strip()) == 0:
@@ -285,8 +284,8 @@ class ScraperEngine:
                     continue
 
             # Scroll down to trigger infinite feed loading
-            await page.evaluate("window.scrollBy(0, 1200)")
-            await page.wait_for_timeout(1800)
+            page.evaluate("window.scrollBy(0, 1200)")
+            page.wait_for_timeout(1800)
 
-        logger.info(f"[group comment] [Group: {group_name or 'Unknown'}] Feed scan finished: {len(matched_posts)} matched posts collected.")
+        logger.info(f"[group comment] [Group: {group_name or 'Unknown'}] Feed scan finished: {len(matched_posts)} relevant posts collected.")
         return matched_posts
