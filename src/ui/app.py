@@ -21,6 +21,22 @@ def is_port_in_use(port: int = 8000) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
+def get_port_pids(port: int = 8000) -> list[int]:
+    """Retrieve process IDs listening on the specified port on Windows."""
+    pids = []
+    if os.name == "nt":
+        cmd = f"""Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique"""
+        try:
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, text=True, timeout=5)
+            for line in res.stdout.strip().splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    pids.append(int(line))
+        except Exception:
+            pass
+    return list(set(pids))
+
+
 def kill_port_processes(port: int = 8000) -> None:
     """Kill any process listening on the specified port on Windows."""
     if os.name == "nt":
@@ -46,7 +62,8 @@ class FacebookScraperApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Facebook Scraper AI Autonomous Agent")
+        self.current_pid = os.getpid()
+        self.root.title(f"Facebook Scraper AI Autonomous Agent (PID: {self.current_pid})")
         self.root.geometry("980x880")
         self.root.minsize(800, 700)
 
@@ -57,7 +74,7 @@ class FacebookScraperApp:
         # Apply Modern Styling & Colors
         self.setup_styles()
 
-        # Startup Bridge Check & Warning
+        # Startup Bridge Check & Warning (including PIDs)
         self.handle_startup_bridge()
 
         # Build Main UI Layout
@@ -88,12 +105,19 @@ class FacebookScraperApp:
         self.style.configure("Action.TButton", font=("Segoe UI", 9), padding=4)
 
     def handle_startup_bridge(self):
-        """Check for existing bridge instances, display warning if detected, and start fresh bridge."""
-        if is_port_in_use(8000):
+        """Check for existing bridge instances, display warning with PIDs if detected, and start fresh bridge."""
+        existing_pids = get_port_pids(8000)
+        # Filter out current process PID just in case
+        conflicting_pids = [p for p in existing_pids if p != self.current_pid]
+
+        if conflicting_pids or is_port_in_use(8000):
+            pid_str = ", ".join(str(p) for p in conflicting_pids) if conflicting_pids else "Unknown (Port 8000 in use)"
             messagebox.showwarning(
-                "Instance Warning",
-                "Warning: An active instance of the Facebook Scraper Bridge is already running on port 8000.\n\n"
-                "The application will restart the bridge to ensure a clean, synchronized session."
+                "Instance Warning - Conflicting Process",
+                f"Warning: Another instance of the Facebook Scraper Bridge or UI is already running!\n\n"
+                f"• Current UI Process PID     : {self.current_pid}\n"
+                f"• Conflicting Process PID(s) : {pid_str}\n\n"
+                f"The application will now terminate the previous instance and start a fresh bridge session."
             )
             kill_port_processes(8000)
             time.sleep(1.0)
@@ -356,15 +380,35 @@ class FacebookScraperApp:
         self.send_btn.config(state=tk.NORMAL, text="▶ Send Prompt", bg="#0d6efd")
         self.status_lbl.config(text="🟢 Idle - Ready")
 
+        timestamp_str = time.strftime('%Y-%m-%d %H:%M:%S')
+
         if error:
             self.update_tech_pane(
                 f"[Status]          : ERROR\n"
                 f"[Endpoint Used]   : {url}\n"
                 f"[Elapsed Time]    : {elapsed:.2f}s\n"
+                f"[Timestamp]       : {timestamp_str}\n"
                 f"[Error Details]   : {error}\n\n"
-                f"Denoted payload   : [payload] (none returned due to error)"
+                f"--- Technical Details ---\n"
+                f"Denoted payload   : [payload] (none returned due to network/execution failure)"
             )
-            self.update_payload_pane(f"Error executing request:\n{error}")
+            formatted_error_result = (
+                f"================================================================================\n"
+                f"❌ EXECUTION ERROR REPORT\n"
+                f"================================================================================\n"
+                f"Target Endpoint : {url}\n"
+                f"Elapsed Time    : {elapsed:.2f} seconds\n"
+                f"Timestamp       : {timestamp_str}\n\n"
+                f"[Error Summary]\n"
+                f"{error}\n\n"
+                f"[Troubleshooting Guide]\n"
+                f"1. If using n8n webhook, ensure n8n is running (http://localhost:5678) and workflow is active.\n"
+                f"2. You can switch the 'Target' dropdown to 'direct-bridge (http://127.0.0.1:8000/pipeline)'.\n"
+                f"3. Verify bridge health at: http://127.0.0.1:8000/health\n"
+                f"4. Inspect detailed logs at: logs/scraper.log\n"
+                f"================================================================================"
+            )
+            self.update_payload_pane(formatted_error_result)
             return
 
         # Extract payload vs metadata
@@ -393,13 +437,67 @@ class FacebookScraperApp:
             f"[Posts Scraped]   : {posts_count}\n"
             f"[Endpoint Used]   : {url}\n"
             f"[Execution Time]  : {elapsed:.2f} seconds\n"
-            f"[Timestamp]       : {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            f"[Timestamp]       : {timestamp_str}\n\n"
             f"--- Technical JSON Response (Payload Redacted) ---\n"
             f"{json.dumps(tech_dict, indent=2, ensure_ascii=False)}"
         )
-
         self.update_tech_pane(tech_summary)
-        self.update_payload_pane(payload_content or "No payload returned.")
+
+        # Format Pane 3 Output based on execution status
+        if status == "obstacle_encountered":
+            formatted_obstacle = (
+                f"================================================================================\n"
+                f"⚠️ OBSTACLE / SESSION CHALLENGE ENCOUNTERED\n"
+                f"================================================================================\n"
+                f"Task ID         : {task_id}\n"
+                f"Status          : Obstacle Encountered (0 posts scraped)\n"
+                f"Target Endpoint : {url}\n"
+                f"Elapsed Time    : {elapsed:.2f} seconds\n"
+                f"Timestamp       : {timestamp_str}\n\n"
+                f"[AI Diagnostic / Reason]\n"
+                f"{payload_content}\n\n"
+                f"[Recommended Actions]\n"
+                f"• Re-authenticate session: Run 'python login.py' in a terminal to refresh cookies.\n"
+                f"• Ensure target Facebook groups are public and accessible without approval.\n"
+                f"• Check execution details in logs/scraper.log.\n"
+                f"================================================================================"
+            )
+            self.update_payload_pane(formatted_obstacle)
+        elif status == "error":
+            formatted_err = (
+                f"================================================================================\n"
+                f"❌ SERVER / AGENT ERROR REPORT\n"
+                f"================================================================================\n"
+                f"Task ID         : {task_id}\n"
+                f"Status          : Error\n"
+                f"Target Endpoint : {url}\n"
+                f"Elapsed Time    : {elapsed:.2f} seconds\n"
+                f"Timestamp       : {timestamp_str}\n\n"
+                f"[Error Details]\n"
+                f"{payload_content}\n\n"
+                f"[Troubleshooting]\n"
+                f"• Review server logs at: logs/scraper.log\n"
+                f"================================================================================"
+            )
+            self.update_payload_pane(formatted_err)
+        elif not payload_content or (posts_count == 0 and "Empty" in payload_content):
+            formatted_empty = (
+                f"================================================================================\n"
+                f"ℹ️ SCRAPE COMPLETED (0 MATCHING POSTS FOUND)\n"
+                f"================================================================================\n"
+                f"Task ID         : {task_id}\n"
+                f"Status          : Success (0 matching posts)\n"
+                f"Target Endpoint : {url}\n"
+                f"Elapsed Time    : {elapsed:.2f} seconds\n"
+                f"Timestamp       : {timestamp_str}\n\n"
+                f"[Details]\n"
+                f"The scraping run completed, but no posts matched your filter criteria or the discovered groups had no accessible user posts.\n"
+                f"Try broadening your search keywords or targeting an active public group directly.\n"
+                f"================================================================================"
+            )
+            self.update_payload_pane(formatted_empty)
+        else:
+            self.update_payload_pane(payload_content)
 
     def update_tech_pane(self, text: str):
         """Safely update the technical metadata text box."""
