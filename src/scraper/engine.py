@@ -1,6 +1,12 @@
 """Scraper Engine: Main browser orchestrator combining DOM extraction, gating checks, and AI vision recovery."""
 
+import os
+import sys
 import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import logging
 from typing import List, Tuple, Optional, Callable
 from playwright.async_api import async_playwright, Page, BrowserContext

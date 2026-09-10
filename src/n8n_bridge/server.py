@@ -1,6 +1,13 @@
 """n8n Bridge Server: REST API endpoints for seamless n8n webhook and AI agent integration."""
 
 import os
+import sys
+import asyncio
+
+# Ensure Windows Proactor event loop policy is active for Playwright subprocess support
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import logging
 from logging.handlers import RotatingFileHandler
 from typing import List, Optional, Dict, Any

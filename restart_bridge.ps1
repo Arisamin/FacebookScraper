@@ -11,15 +11,15 @@ $port8000Pids = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContin
     Select-Object -ExpandProperty OwningProcess -Unique
 
 if ($port8000Pids) {
-    foreach ($pId in $port8000Pids) {
+    foreach ($targetPid in $port8000Pids) {
         try {
-            $proc = Get-Process -Id $pId -ErrorAction SilentlyContinue
+            $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
             if ($proc) {
-                Write-Host "  -> Terminating process on port 8000: $($proc.ProcessName) (PID: $pId)" -ForegroundColor Yellow
-                Stop-Process -Id $pId -Force -ErrorAction SilentlyContinue
+                Write-Host "  -> Terminating process on port 8000: $($proc.ProcessName) (PID: $targetPid)" -ForegroundColor Yellow
+                Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
             }
         } catch {
-            Write-Host "  -> Could not stop PID $pId : $_" -ForegroundColor DarkGray
+            Write-Host "  -> Could not stop PID $targetPid : $_" -ForegroundColor DarkGray
         }
     }
 } else {

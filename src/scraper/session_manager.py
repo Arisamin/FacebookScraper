@@ -1,8 +1,16 @@
 """Session Manager: Handles cookies, storage states, anti-detection browser profile configurations."""
 
 import os
+import sys
 import json
+import logging
+import asyncio
 from typing import Optional, Dict, Any, List
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+logger = logging.getLogger("SessionManager")
 
 
 class SessionManager:
