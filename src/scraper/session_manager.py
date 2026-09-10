@@ -41,39 +41,17 @@ class SessionManager:
         if not self.has_valid_session():
             return False
 
-        from playwright.async_api import async_playwright
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=self.get_anti_detection_args(),
-                )
-                context = await browser.new_context(
-                    storage_state=self.storage_state_path,
-                    viewport={"width": 1280, "height": 800},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                )
-                page = await context.new_page()
-                try:
-                    await page.goto("https://www.facebook.com/", wait_until="domcontentloaded", timeout=10000)
-                    await page.wait_for_timeout(2500)
-                    body_text = await page.inner_text("body")
-                    is_login_wall = (
-                        "התחברות" in body_text or
-                        "log in" in body_text.lower() or
-                        "המשך" in body_text or
-                        "continue as" in body_text.lower() or
-                        "סיסמה" in body_text or
-                        "password" in body_text.lower() or
-                        "login" in page.url or
-                        "checkpoint" in page.url
-                    )
-                    return not is_login_wall
-                finally:
-                    await context.close()
-                    await browser.close()
-        except Exception:
-            return False
+        def _run_check() -> bool:
+            import subprocess
+            cmd = [sys.executable, "-m", "src.scraper.session_checker", "--storage", self.storage_state_path]
+            try:
+                res = subprocess.run(cmd, capture_output=True, timeout=25)
+                return res.returncode == 0
+            except Exception as e:
+                logger.warning(f"Session check subprocess error: {e}")
+                return False
+
+        return await asyncio.to_thread(_run_check)
 
     def load_storage_state(self) -> Optional[Dict[str, Any]]:
         """Load storage state dictionary if file exists."""
@@ -88,41 +66,27 @@ class SessionManager:
             json.dump(state, f, indent=2)
 
     async def launch_interactive_login(self, timeout_seconds: int = 120) -> bool:
-        """Launch a visible Chromium window to allow the user to log in and save session."""
-        from playwright.async_api import async_playwright
-        import asyncio
+        """Launch a visible Chromium window in an isolated process to allow user login."""
+        def _run_login() -> bool:
+            import subprocess
+            cmd = [
+                sys.executable,
+                "-m",
+                "src.scraper.login_runner",
+                "--timeout",
+                str(timeout_seconds),
+                "--output",
+                self.storage_state_path,
+            ]
+            try:
+                logger.info(f"Launching visible login window via login_runner (timeout: {timeout_seconds}s)...")
+                res = subprocess.run(cmd, timeout=timeout_seconds + 10)
+                return res.returncode == 0
+            except Exception as e:
+                logger.error(f"Error executing login runner: {e}")
+                return False
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=False,
-                args=self.get_anti_detection_args(),
-            )
-            context = await browser.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
-            page = await context.new_page()
-            await page.goto("https://www.facebook.com")
-
-            # Wait for user to log in by polling for common logged-in indicators
-            # or until timeout
-            start_time = asyncio.get_event_loop().time()
-            logged_in = False
-            while asyncio.get_event_loop().time() - start_time < timeout_seconds:
-                cookies = await context.cookies()
-                # Check for standard Facebook authentication cookies (c_user, xs)
-                cookie_names = [c["name"] for c in cookies]
-                if "c_user" in cookie_names or "xs" in cookie_names:
-                    logged_in = True
-                    break
-                await asyncio.sleep(2)
-
-            if logged_in:
-                state = await context.storage_state()
-                self.save_storage_state(state)
-
-            await browser.close()
-            return logged_in
+        return await asyncio.to_thread(_run_login)
 
     def get_anti_detection_args(self) -> List[str]:
         """Browser launch flags to minimize bot detection."""
