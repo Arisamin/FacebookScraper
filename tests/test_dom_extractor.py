@@ -57,3 +57,16 @@ class TestDOMExtractor:
 
         d_yesterday = extractor.parse_relative_date("Yesterday at 10:00")
         assert 80000 <= (now - d_yesterday).total_seconds() <= 90000
+
+    def test_parse_hebrew_relative_dates(self):
+        extractor = DOMExtractor()
+        now = datetime.now()
+
+        d_hebrew_hours = extractor.parse_relative_date("לפני 3 שעות")
+        assert (now - d_hebrew_hours).total_seconds() < 12000
+
+        d_hebrew_yesterday = extractor.parse_relative_date("אתמול ב-15:00")
+        assert 80000 <= (now - d_hebrew_yesterday).total_seconds() <= 90000
+
+        d_hebrew_days = extractor.parse_relative_date("לפני 4 ימים")
+        assert (now - d_hebrew_days).days in [3, 4]

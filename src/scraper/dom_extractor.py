@@ -116,10 +116,11 @@ class DOMExtractor:
         return None
 
     def parse_relative_date(self, date_str: str) -> datetime:
-        """Parse Facebook relative date strings (e.g. '2 hours ago', 'Yesterday at 14:00')."""
+        """Parse Facebook relative date strings in English and Hebrew (e.g. '2 hours ago', 'אתמול', 'לפני 3 שעות')."""
         now = datetime.now()
         clean = date_str.lower().strip()
 
+        # English parsing
         if "min" in clean:
             match = re.search(r"(\d+)\s*m", clean)
             mins = int(match.group(1)) if match else 5
@@ -130,17 +131,33 @@ class DOMExtractor:
             hours = int(match.group(1)) if match else 1
             return now - timedelta(hours=hours)
 
-        if "yesterday" in clean:
+        if "yesterday" in clean or "אתמול" in clean:
             return now - timedelta(days=1)
 
-        if "day" in clean or "d" in clean:
-            match = re.search(r"(\d+)\s*d", clean)
+        if "שלשום" in clean or "לפני יומיים" in clean:
+            return now - timedelta(days=2)
+
+        if "day" in clean or "d" in clean or "ימים" in clean or "יום" in clean:
+            match = re.search(r"(\d+)\s*(?:d|ימים|יום)", clean)
             days = int(match.group(1)) if match else 1
             return now - timedelta(days=days)
 
-        if "week" in clean:
-            match = re.search(r"(\d+)\s*w", clean)
+        if "week" in clean or "w" in clean or "שבועות" in clean or "שבוע" in clean:
+            match = re.search(r"(\d+)\s*(?:w|שבועות|שבוע)", clean)
             weeks = int(match.group(1)) if match else 1
             return now - timedelta(weeks=weeks)
+
+        if "שעתיים" in clean:
+            return now - timedelta(hours=2)
+
+        if "שעות" in clean or "שעה" in clean:
+            match = re.search(r"(\d+)\s*(?:שעות|שעה)", clean)
+            hours = int(match.group(1)) if match else 1
+            return now - timedelta(hours=hours)
+
+        if "דקות" in clean or "דקה" in clean:
+            match = re.search(r"(\d+)\s*(?:דקות|דקה)", clean)
+            mins = int(match.group(1)) if match else 5
+            return now - timedelta(minutes=mins)
 
         return now
